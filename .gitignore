@@ -1,0 +1,7 @@
+# SQLite runtime files
+*.db
+*.db-wal
+*.db-shm
+
+# Generated datasets
+backend/dataset/faces/
