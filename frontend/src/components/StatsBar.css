@@ -1,0 +1,78 @@
+.stats-bar {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 12px;
+    padding: 0 16px 16px;
+}
+
+.stat-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    text-align: center;
+    transition: all 0.3s ease;
+}
+
+.stat-card:hover {
+    background: var(--bg-card-hover);
+    border-color: var(--border-light);
+    transform: translateY(-1px);
+}
+
+.stat-label {
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-weight: 600;
+    margin-bottom: 6px;
+}
+
+.stat-value {
+    font-size: 1.6rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+}
+
+.stat-sub {
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    margin-top: 4px;
+}
+
+.val-occupancy {
+    color: var(--accent);
+}
+
+.val-in {
+    color: var(--success);
+}
+
+.val-out {
+    color: var(--danger);
+}
+
+.val-dwell {
+    color: var(--warning);
+}
+
+.val-prediction {
+    color: var(--primary);
+}
+
+.stat-card.alert-pulse {
+    border-color: var(--danger) !important;
+    animation: pulse-border 1.5s infinite;
+}
+
+.stat-card.alert-pulse .stat-value {
+    color: var(--danger) !important;
+}
+
+@media (max-width: 1000px) {
+    .stats-bar {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}

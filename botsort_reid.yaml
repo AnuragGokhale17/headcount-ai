@@ -1,0 +1,19 @@
+# BoT-SORT tracker config with ReID enabled
+# Custom config for Headcount AI — do NOT modify the venv copy
+
+tracker_type: botsort
+track_high_thresh: 0.25
+track_low_thresh: 0.1
+new_track_thresh: 0.25
+track_buffer: 45          # Increased for better ReID recovery after occlusion
+match_thresh: 0.8
+fuse_score: True
+
+# Global motion compensation
+gmc_method: sparseOptFlow
+
+# ReID settings
+proximity_thresh: 0.5
+appearance_thresh: 0.25   # Lowered to allow ReID matches across more variations
+with_reid: True           # ENABLE Re-Identification
+model: auto               # Uses detector features (minimal overhead)

@@ -1,0 +1,1212 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Command Center | Intelligent Headcount Monitor</title>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap"
+        rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg-body: #07090e;
+            --bg-panel: #0f1219;
+            --bg-card: #161b26;
+            --bg-card-hover: #1c2333;
+            --bg-input: #1a2030;
+            --primary: #6366f1;
+            --primary-glow: rgba(99, 102, 241, 0.3);
+            --accent: #22d3ee;
+            --accent-glow: rgba(34, 211, 238, 0.2);
+            --success: #10b981;
+            --success-dim: rgba(16, 185, 129, 0.15);
+            --warning: #f59e0b;
+            --warning-dim: rgba(245, 158, 11, 0.15);
+            --danger: #ef4444;
+            --danger-dim: rgba(239, 68, 68, 0.15);
+            --info: #3b82f6;
+            --info-dim: rgba(59, 130, 246, 0.15);
+            --text-main: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --border: rgba(255, 255, 255, 0.06);
+            --border-light: rgba(255, 255, 255, 0.1);
+            --glass: rgba(15, 18, 25, 0.8);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: var(--bg-body);
+            color: var(--text-main);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* === HEADER === */
+        header {
+            background: var(--bg-panel);
+            border-bottom: 1px solid var(--border);
+            padding: 0 24px;
+            height: 56px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            z-index: 100;
+            backdrop-filter: blur(20px);
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-weight: 700;
+            font-size: 1rem;
+        }
+
+        .brand-logo {
+            height: 30px;
+            width: auto;
+            object-fit: contain;
+        }
+
+        .brand-divider {
+            width: 1px;
+            height: 24px;
+            background: var(--border-light);
+        }
+
+        .ai-badge {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(34, 211, 238, 0.1));
+            border: 1px solid rgba(99, 102, 241, 0.3);
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            color: var(--accent);
+        }
+
+        .ai-pulse {
+            width: 6px;
+            height: 6px;
+            background: var(--accent);
+            border-radius: 50%;
+            animation: pulse-glow 2s infinite;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .threat-badge {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 14px;
+            border-radius: 20px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            transition: all 0.5s ease;
+        }
+
+        .threat-normal {
+            background: var(--success-dim);
+            color: var(--success);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .threat-elevated {
+            background: var(--warning-dim);
+            color: var(--warning);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+        }
+
+        .threat-critical {
+            background: var(--danger-dim);
+            color: var(--danger);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            animation: pulse-border 1.5s infinite;
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            background: var(--success-dim);
+            color: var(--success);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .live-dot {
+            width: 6px;
+            height: 6px;
+            background: var(--danger);
+            border-radius: 50%;
+            animation: pulse-glow 1.5s infinite;
+        }
+
+        /* === MAIN LAYOUT === */
+        main {
+            display: grid;
+            grid-template-columns: 1fr 420px;
+            height: calc(100vh - 56px);
+            overflow: hidden;
+        }
+
+        /* === LEFT: VIDEO + BOTTOM STATS === */
+        .left-panel {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .video-section {
+            flex: 1;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+
+        .video-container {
+            flex: 1;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid var(--border);
+            position: relative;
+            background: #000;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+        }
+
+        .video-feed {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .video-overlay {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            display: flex;
+            gap: 8px;
+        }
+
+        .overlay-tag {
+            background: rgba(0, 0, 0, 0.65);
+            color: white;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 0.65rem;
+            font-weight: 600;
+            backdrop-filter: blur(8px);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* Bottom stats bar */
+        .stats-bar {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 12px;
+            padding: 0 16px 16px;
+        }
+
+        .stat-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 14px 16px;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+
+        .stat-card:hover {
+            background: var(--bg-card-hover);
+            border-color: var(--border-light);
+            transform: translateY(-1px);
+        }
+
+        .stat-label {
+            font-size: 0.6rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+
+        .stat-value {
+            font-size: 1.6rem;
+            font-weight: 800;
+            font-variant-numeric: tabular-nums;
+            line-height: 1;
+        }
+
+        .stat-sub {
+            font-size: 0.6rem;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        .val-occupancy {
+            color: var(--accent);
+        }
+
+        .val-in {
+            color: var(--success);
+        }
+
+        .val-out {
+            color: var(--danger);
+        }
+
+        .val-dwell {
+            color: var(--warning);
+        }
+
+        .val-prediction {
+            color: var(--primary);
+        }
+
+        /* === RIGHT: AI SIDEBAR === */
+        aside {
+            background: var(--bg-panel);
+            border-left: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .sidebar-header {
+            padding: 16px 20px 12px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .sidebar-title {
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .sidebar-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .sidebar-content::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .sidebar-content::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .sidebar-content::-webkit-scrollbar-thumb {
+            background: var(--border-light);
+            border-radius: 2px;
+        }
+
+        /* AI Status Hero */
+        .ai-status-hero {
+            background: linear-gradient(135deg, var(--bg-card) 0%, rgba(99, 102, 241, 0.08) 100%);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .ai-status-hero::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, var(--primary), var(--accent), var(--primary));
+            background-size: 200% 100%;
+            animation: shimmer 3s linear infinite;
+        }
+
+        .ai-status-label {
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: var(--text-muted);
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .ai-status-text {
+            font-size: 1.1rem;
+            font-weight: 800;
+            margin-bottom: 4px;
+        }
+
+        .ai-trend-text {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+        }
+
+        .status-normal .ai-status-text {
+            color: var(--success);
+        }
+
+        .status-elevated .ai-status-text {
+            color: var(--warning);
+        }
+
+        .status-critical .ai-status-text {
+            color: var(--danger);
+        }
+
+        /* Insight Cards */
+        .insight-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .insight-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 14px;
+            transition: all 0.3s ease;
+        }
+
+        .insight-card:hover {
+            border-color: var(--border-light);
+            background: var(--bg-card-hover);
+        }
+
+        .insight-icon {
+            font-size: 1.2rem;
+            margin-bottom: 6px;
+        }
+
+        .insight-value {
+            font-size: 1.2rem;
+            font-weight: 800;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .insight-label {
+            font-size: 0.6rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 600;
+            margin-top: 2px;
+        }
+
+        /* Section Title */
+        .section-title {
+            font-size: 0.65rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-top: 4px;
+        }
+
+        .section-count {
+            background: var(--bg-card);
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 0.6rem;
+            color: var(--text-secondary);
+        }
+
+        /* Chart */
+        .chart-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 16px;
+        }
+
+        .chart-container {
+            height: 120px;
+            width: 100%;
+        }
+
+        /* Event Log */
+        .event-log {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .event-log::-webkit-scrollbar {
+            width: 3px;
+        }
+
+        .event-log::-webkit-scrollbar-thumb {
+            background: var(--border-light);
+            border-radius: 2px;
+        }
+
+        .event-item {
+            display: flex;
+            gap: 10px;
+            padding: 10px 12px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            align-items: flex-start;
+            transition: all 0.3s ease;
+            animation: slideIn 0.3s ease;
+        }
+
+        .event-item:hover {
+            background: var(--bg-card-hover);
+        }
+
+        .event-severity {
+            width: 3px;
+            min-height: 30px;
+            border-radius: 2px;
+            flex-shrink: 0;
+        }
+
+        .sev-info {
+            background: var(--info);
+        }
+
+        .sev-warning {
+            background: var(--warning);
+        }
+
+        .sev-critical {
+            background: var(--danger);
+            animation: pulse-glow-red 1.5s infinite;
+        }
+
+        .event-body {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .event-title {
+            font-size: 0.7rem;
+            font-weight: 600;
+            line-height: 1.3;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .event-desc {
+            font-size: 0.6rem;
+            color: var(--text-muted);
+            margin-top: 2px;
+            line-height: 1.3;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .event-time {
+            font-size: 0.55rem;
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+
+        /* AI Chat */
+        .ai-chat {
+            border-top: 1px solid var(--border);
+            padding: 12px 20px;
+            background: var(--bg-panel);
+        }
+
+        .chat-messages {
+            max-height: 100px;
+            overflow-y: auto;
+            margin-bottom: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .chat-messages::-webkit-scrollbar {
+            width: 3px;
+        }
+
+        .chat-messages::-webkit-scrollbar-thumb {
+            background: var(--border-light);
+            border-radius: 2px;
+        }
+
+        .chat-msg {
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 0.7rem;
+            line-height: 1.4;
+            max-width: 95%;
+            animation: slideIn 0.2s ease;
+        }
+
+        .chat-user {
+            background: rgba(99, 102, 241, 0.15);
+            border: 1px solid rgba(99, 102, 241, 0.2);
+            align-self: flex-end;
+            color: var(--text-main);
+        }
+
+        .chat-ai {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+        }
+
+        .chat-input-row {
+            display: flex;
+            gap: 8px;
+        }
+
+        .chat-input {
+            flex: 1;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 8px 12px;
+            color: var(--text-main);
+            font-size: 0.75rem;
+            font-family: 'Inter', sans-serif;
+            outline: none;
+            transition: border-color 0.3s ease;
+        }
+
+        .chat-input:focus {
+            border-color: var(--primary);
+        }
+
+        .chat-input::placeholder {
+            color: var(--text-muted);
+        }
+
+        .chat-send {
+            background: linear-gradient(135deg, var(--primary), #818cf8);
+            border: none;
+            border-radius: 8px;
+            padding: 8px 14px;
+            color: white;
+            font-size: 0.75rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .chat-send:hover {
+            transform: scale(1.05);
+            box-shadow: 0 4px 15px var(--primary-glow);
+        }
+
+        /* Unauthorized */
+        .unauth-alert {
+            background: var(--danger-dim);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            border-radius: 10px;
+            padding: 14px;
+            animation: pulse-border 1.5s infinite;
+        }
+
+        .unauth-title {
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: var(--danger);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .unauth-ids {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            margin-top: 8px;
+        }
+
+        .unauth-tag {
+            background: var(--danger);
+            color: white;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.65rem;
+            font-weight: 600;
+        }
+
+        /* Footer */
+        .sidebar-footer {
+            padding: 10px 20px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.6rem;
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* === ANIMATIONS === */
+        @keyframes pulse-glow {
+
+            0%,
+            100% {
+                opacity: 1;
+                box-shadow: 0 0 4px currentColor;
+            }
+
+            50% {
+                opacity: 0.4;
+                box-shadow: 0 0 8px currentColor;
+            }
+        }
+
+        @keyframes pulse-glow-red {
+
+            0%,
+            100% {
+                box-shadow: 0 0 4px var(--danger);
+            }
+
+            50% {
+                box-shadow: 0 0 10px var(--danger);
+            }
+        }
+
+        @keyframes pulse-border {
+
+            0%,
+            100% {
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.3);
+            }
+
+            50% {
+                box-shadow: 0 0 15px 2px rgba(239, 68, 68, 0.15);
+            }
+        }
+
+        @keyframes shimmer {
+            0% {
+                background-position: -200% 0;
+            }
+
+            100% {
+                background-position: 200% 0;
+            }
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-4px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Occupancy hero pulse (alert mode) */
+        .stat-card.alert-pulse {
+            border-color: var(--danger) !important;
+            animation: pulse-border 1.5s infinite;
+        }
+
+        .stat-card.alert-pulse .stat-value {
+            color: var(--danger) !important;
+        }
+
+        /* === RESPONSIVE === */
+        @media (max-width: 1200px) {
+            main {
+                grid-template-columns: 1fr 360px;
+            }
+        }
+
+        @media (max-width: 1000px) {
+            main {
+                grid-template-columns: 1fr;
+                grid-template-rows: auto auto;
+                overflow-y: auto;
+            }
+
+            .left-panel {
+                max-height: 55vh;
+            }
+
+            .stats-bar {
+                grid-template-columns: repeat(3, 1fr);
+            }
+
+            aside {
+                max-height: 45vh;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <div class="brand">
+            <img src="/static/solars.png" alt="Solar Group" class="brand-logo">
+            <div class="brand-divider"></div>
+            <span>AI Command Center</span>
+            <div class="ai-badge">
+                <span class="ai-pulse"></span>
+                AI ACTIVE
+            </div>
+        </div>
+        <div class="header-right">
+            <div class="threat-badge threat-normal" id="threat-badge">
+                <span>●</span> <span id="threat-text">NORMAL</span>
+            </div>
+            <div class="status-badge">
+                <span class="live-dot"></span> LIVE
+            </div>
+            <span id="header-clock"
+                style="font-size: 0.7rem; color: var(--text-muted); font-family: 'JetBrains Mono', monospace;">00:00:00</span>
+        </div>
+    </header>
+
+    <main>
+        <!-- LEFT: Video + Stats -->
+        <div class="left-panel">
+            <section class="video-section">
+                <div class="video-container">
+                    <div class="video-overlay">
+                        <span class="overlay-tag" style="color: var(--danger);">● REC</span>
+                        <span class="overlay-tag">CAM-01</span>
+                        <span class="overlay-tag" id="video-fps">0 FPS</span>
+                    </div>
+                    <img src="/video_feed" class="video-feed" alt="Connecting to Camera...">
+                </div>
+            </section>
+
+            <div class="stats-bar">
+                <div class="stat-card" id="occ-card">
+                    <div class="stat-label">Occupancy</div>
+                    <div class="stat-value val-occupancy" id="val-occ">0</div>
+                    <div class="stat-sub">Current headcount</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Total In</div>
+                    <div class="stat-value val-in" id="val-in">0</div>
+                    <div class="stat-sub">Entries logged</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Total Out</div>
+                    <div class="stat-value val-out" id="val-out">0</div>
+                    <div class="stat-sub">Exits logged</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Avg Dwell</div>
+                    <div class="stat-value val-dwell" id="val-dwell">0s</div>
+                    <div class="stat-sub">Stay duration</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Prediction</div>
+                    <div class="stat-value val-prediction" id="val-predict">0</div>
+                    <div class="stat-sub">Next hour est.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- RIGHT: AI Sidebar -->
+        <aside>
+            <div class="sidebar-header">
+                <div class="sidebar-title">
+                    🧠 AI Panel
+                </div>
+                <span id="uptime"
+                    style="font-size: 0.6rem; color: var(--text-muted); font-family: 'JetBrains Mono', monospace;">0h
+                    0m</span>
+            </div>
+
+            <div class="sidebar-content">
+                <!-- AI Status Hero -->
+                <div class="ai-status-hero status-normal" id="ai-status-hero">
+                    <div class="ai-status-label">System Intelligence Status</div>
+                    <div class="ai-status-text" id="ai-status-text">NORMAL OPERATIONS</div>
+                    <div class="ai-trend-text">Trend: <span id="ai-trend">stable</span> · Learning patterns...</div>
+                </div>
+
+                <!-- Insight Grid -->
+                <div class="insight-grid">
+                    <div class="insight-card">
+                        <div class="insight-icon">🔮</div>
+                        <div class="insight-value val-prediction" id="insight-predict">0</div>
+                        <div class="insight-label">Predicted Occ.</div>
+                    </div>
+                    <div class="insight-card">
+                        <div class="insight-icon">⏱️</div>
+                        <div class="insight-value val-dwell" id="insight-dwell">0s</div>
+                        <div class="insight-label">Avg Dwell Time</div>
+                    </div>
+                    <div class="insight-card">
+                        <div class="insight-icon">📊</div>
+                        <div class="insight-value" id="insight-peak" style="color: var(--accent);">N/A</div>
+                        <div class="insight-label">Peak Hour</div>
+                    </div>
+                    <div class="insight-card">
+                        <div class="insight-icon">👁️</div>
+                        <div class="insight-value" id="insight-loiter" style="color: var(--text-main);">0</div>
+                        <div class="insight-label">Loitering</div>
+                    </div>
+                </div>
+
+                <!-- Unauthorized Alert (hidden by default) -->
+                <div id="unauth-card" class="unauth-alert" style="display: none;">
+                    <div class="unauth-title">🔴 UNAUTHORIZED ACCESS — <span id="val-unauth">0</span> detected</div>
+                    <div class="unauth-ids" id="unauth-list"></div>
+                </div>
+
+                <!-- Occupancy Trend Chart -->
+                <div class="section-title">
+                    Occupancy Trend
+                    <span style="font-size: 0.55rem; opacity: 0.6;">Live + Prediction</span>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-container">
+                        <canvas id="activityChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- AI Event Log -->
+                <div class="section-title">
+                    AI Event Log
+                    <span class="section-count" id="event-count">0 events</span>
+                </div>
+                <div class="event-log" id="event-log">
+                    <div class="event-item">
+                        <div class="event-severity sev-info"></div>
+                        <div class="event-body">
+                            <div class="event-title">🧠 AI Analytics Engine initialized</div>
+                            <div class="event-desc">System started, learning patterns...</div>
+                        </div>
+                        <div class="event-time">now</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- AI Chat -->
+            <div class="ai-chat">
+                <div class="chat-messages" id="chat-messages">
+                    <div class="chat-msg chat-ai">👋 I'm your AI assistant. Ask me about occupancy trends, anomalies,
+                        peak hours, or dwell times.</div>
+                </div>
+                <div class="chat-input-row">
+                    <input type="text" class="chat-input" id="chat-input"
+                        placeholder="Ask AI... (e.g. 'any anomalies?')" />
+                    <button class="chat-send" id="chat-send" onclick="sendChat()">Ask</button>
+                </div>
+            </div>
+
+            <div class="sidebar-footer">
+                <span>FPS: <span id="val-fps">0</span></span>
+                <span>YOLO26-L · BoT-SORT · AI v1</span>
+            </div>
+        </aside>
+    </main>
+
+    <script>
+        // === CONFIGURATION ===
+        const SAFETY_LIMIT = 10;
+
+        // === CHART ===
+        const ctx = document.getElementById('activityChart').getContext('2d');
+        const activityChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: Array(20).fill(''),
+                datasets: [{
+                    label: 'Occupancy',
+                    data: Array(20).fill(null),
+                    borderColor: '#22d3ee',
+                    backgroundColor: 'rgba(34, 211, 238, 0.08)',
+                    borderWidth: 2,
+                    tension: 0.4,
+                    fill: true,
+                    pointRadius: 0
+                }, {
+                    label: 'Predicted',
+                    data: Array(20).fill(null),
+                    borderColor: '#6366f1',
+                    borderWidth: 1.5,
+                    borderDash: [5, 5],
+                    tension: 0.4,
+                    fill: false,
+                    pointRadius: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top',
+                        labels: {
+                            color: '#64748b',
+                            font: { size: 9, family: 'Inter' },
+                            boxWidth: 12,
+                            padding: 8
+                        }
+                    }
+                },
+                scales: {
+                    x: { display: false },
+                    y: {
+                        display: true,
+                        beginAtZero: true,
+                        grid: { color: 'rgba(255,255,255,0.03)', drawBorder: false },
+                        ticks: { color: '#64748b', font: { size: 9 } },
+                        suggestedMax: SAFETY_LIMIT + 2
+                    }
+                },
+                animation: { duration: 0 }
+            }
+        });
+
+        // === CLOCK ===
+        function updateClock() {
+            const now = new Date();
+            document.getElementById('header-clock').innerText = now.toLocaleTimeString();
+        }
+        setInterval(updateClock, 1000);
+        updateClock();
+
+        // === FETCH STATS ===
+        async function fetchStats() {
+            try {
+                const [statsRes, insightsRes] = await Promise.all([
+                    fetch('/api/stats'),
+                    fetch('/api/ai_insights')
+                ]);
+                const data = await statsRes.json();
+                const ai = await insightsRes.json();
+
+                // Core Stats
+                const occ = data.occupancy;
+                document.getElementById('val-in').innerText = data.in;
+                document.getElementById('val-out').innerText = data.out;
+                document.getElementById('val-occ').innerText = occ;
+                document.getElementById('val-fps').innerText = data.fps;
+                document.getElementById('video-fps').innerText = data.fps + ' FPS';
+
+                // Occupancy alert
+                const occCard = document.getElementById('occ-card');
+                if (occ >= SAFETY_LIMIT) {
+                    occCard.classList.add('alert-pulse');
+                } else {
+                    occCard.classList.remove('alert-pulse');
+                }
+
+                // AI Insights
+                const dwellText = ai.avg_dwell_seconds >= 60
+                    ? Math.floor(ai.avg_dwell_seconds / 60) + 'm'
+                    : ai.avg_dwell_seconds + 's';
+                document.getElementById('val-dwell').innerText = dwellText;
+                document.getElementById('val-predict').innerText = ai.prediction_next_hour;
+                document.getElementById('insight-predict').innerText = ai.prediction_next_hour;
+                document.getElementById('insight-dwell').innerText = dwellText;
+                document.getElementById('insight-peak').innerText = ai.peak_hour;
+                document.getElementById('insight-loiter').innerText = ai.loitering_count;
+                document.getElementById('uptime').innerText = ai.uptime;
+                document.getElementById('event-count').innerText = ai.events_count + ' events';
+
+                // AI Trend
+                const trendEmoji = { rising: '📈', falling: '📉', stable: '➡️' };
+                document.getElementById('ai-trend').innerText = (trendEmoji[ai.trend] || '') + ' ' + ai.trend;
+
+                // Loitering highlight
+                const loiterCard = document.getElementById('insight-loiter');
+                loiterCard.style.color = ai.loitering_count > 0 ? 'var(--danger)' : 'var(--text-main)';
+
+                // System Status
+                const hero = document.getElementById('ai-status-hero');
+                const statusText = document.getElementById('ai-status-text');
+                const threatBadge = document.getElementById('threat-badge');
+                const threatText = document.getElementById('threat-text');
+
+                hero.className = 'ai-status-hero';
+                threatBadge.className = 'threat-badge';
+
+                if (ai.system_status === 'CRITICAL') {
+                    hero.classList.add('status-critical');
+                    statusText.innerText = '⚠️ CRITICAL — ATTENTION REQUIRED';
+                    threatBadge.classList.add('threat-critical');
+                    threatText.innerText = 'CRITICAL';
+                } else if (ai.system_status === 'ELEVATED') {
+                    hero.classList.add('status-elevated');
+                    statusText.innerText = '🟡 ELEVATED — MONITORING';
+                    threatBadge.classList.add('threat-elevated');
+                    threatText.innerText = 'ELEVATED';
+                } else {
+                    hero.classList.add('status-normal');
+                    statusText.innerText = '✅ NORMAL OPERATIONS';
+                    threatBadge.classList.add('threat-normal');
+                    threatText.innerText = 'NORMAL';
+                }
+
+                // Unauthorized
+                const unauthCard = document.getElementById('unauth-card');
+                if (data.unauthorized_count > 0) {
+                    unauthCard.style.display = 'block';
+                    document.getElementById('val-unauth').innerText = data.unauthorized_count;
+                    const list = document.getElementById('unauth-list');
+                    list.innerHTML = '';
+                    data.unauthorized_ids.forEach(id => {
+                        const span = document.createElement('span');
+                        span.className = 'unauth-tag';
+                        span.innerText = '#' + id;
+                        list.appendChild(span);
+                    });
+                } else {
+                    unauthCard.style.display = 'none';
+                }
+
+                // Chart Update
+                const chartOcc = activityChart.data.datasets[0].data;
+                chartOcc.push(occ);
+                chartOcc.shift();
+
+                const chartPred = activityChart.data.datasets[1].data;
+                // show prediction as a dotted continuation from current
+                chartPred.fill(null);
+                chartPred[chartPred.length - 1] = ai.prediction_next_hour;
+                chartPred[chartPred.length - 2] = occ;
+
+                activityChart.update();
+
+            } catch (e) {
+                console.error('Stats fetch error', e);
+            }
+        }
+
+        // === FETCH EVENTS ===
+        async function fetchEvents() {
+            try {
+                const res = await fetch('/api/ai_events');
+                const events = await res.json();
+
+                const log = document.getElementById('event-log');
+                log.innerHTML = '';
+
+                events.slice(0, 15).forEach(ev => {
+                    const sevClass = ev.severity === 'CRITICAL' ? 'sev-critical' :
+                        ev.severity === 'WARNING' ? 'sev-warning' : 'sev-info';
+                    const item = document.createElement('div');
+                    item.className = 'event-item';
+                    item.innerHTML = `
+                        <div class="event-severity ${sevClass}"></div>
+                        <div class="event-body">
+                            <div class="event-title">${ev.title}</div>
+                            <div class="event-desc">${ev.description}</div>
+                        </div>
+                        <div class="event-time">${ev.timestamp}</div>
+                    `;
+                    log.appendChild(item);
+                });
+            } catch (e) {
+                console.error('Events fetch error', e);
+            }
+        }
+
+        // === AI CHAT ===
+        async function sendChat() {
+            const input = document.getElementById('chat-input');
+            const query = input.value.trim();
+            if (!query) return;
+
+            const messages = document.getElementById('chat-messages');
+
+            // User message
+            const userMsg = document.createElement('div');
+            userMsg.className = 'chat-msg chat-user';
+            userMsg.innerText = query;
+            messages.appendChild(userMsg);
+            input.value = '';
+            messages.scrollTop = messages.scrollHeight;
+
+            try {
+                const res = await fetch('/api/ai_query', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query })
+                });
+                const data = await res.json();
+
+                const aiMsg = document.createElement('div');
+                aiMsg.className = 'chat-msg chat-ai';
+                // Simple markdown bold conversion
+                aiMsg.innerHTML = data.response.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>');
+                messages.appendChild(aiMsg);
+                messages.scrollTop = messages.scrollHeight;
+            } catch (e) {
+                const errMsg = document.createElement('div');
+                errMsg.className = 'chat-msg chat-ai';
+                errMsg.innerText = '⚠️ Connection error. Please try again.';
+                messages.appendChild(errMsg);
+            }
+        }
+
+        // Enter key for chat
+        document.getElementById('chat-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendChat();
+        });
+
+        // === POLLING ===
+        setInterval(fetchStats, 500);
+        setInterval(fetchEvents, 3000);
+
+        // Initial fetch
+        fetchStats();
+        fetchEvents();
+    </script>
+</body>
+
+</html>
