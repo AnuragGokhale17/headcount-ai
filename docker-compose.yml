@@ -1,0 +1,72 @@
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: headcount_redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
+  mediamtx:
+    image: bluenviron/mediamtx:latest
+    container_name: headcount_mediamtx
+    ports:
+      - "8889:8889"       # WebRTC
+      - "8554:8554"       # RTSP
+      - "8189:8189/udp"   # WebRTC ICE
+    volumes:
+      - ./deepstream/mediamtx.yml:/mediamtx.yml
+    restart: unless-stopped
+
+  deepstream:
+    image: nvcr.io/nvidia/deepstream:9.0-triton-multiarch
+    container_name: headcount_deepstream
+    ipc: host
+    privileged: true
+    depends_on:
+      - redis
+      - mediamtx
+    environment:
+      - REDIS_HOST=redis
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - NVIDIA_VISIBLE_DEVICES=all
+    volumes:
+      - .:/workspace
+    working_dir: /workspace/deepstream
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    command: bash start_ds.sh
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: headcount_backend
+    depends_on:
+      - redis
+      - deepstream
+    environment:
+      - REDIS_HOST=redis
+      - DS_API_BASE=deepstream:8010
+      - FLASK_ENV=production
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./data:/app/data
+      - ./zones.json:/app/zones.json
+    restart: unless-stopped
+
+  # Optional: Separate Frontend if not serving via Flask
+  # frontend:
+  #   build:
+  #     context: .
+  #     dockerfile: frontend/Dockerfile
+  #   container_name: headcount_frontend
+  #   ports:
+  #     - "80:80"
+  #   restart: unless-stopped

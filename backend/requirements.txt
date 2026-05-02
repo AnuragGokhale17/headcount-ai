@@ -1,0 +1,10 @@
+flask
+flask-cors
+redis
+opencv-python-headless
+numpy
+requests
+supervision
+ultralytics
+pandas
+python-dotenv
