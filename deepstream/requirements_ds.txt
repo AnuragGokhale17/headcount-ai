@@ -1,0 +1,8 @@
+# Python dependencies for the DeepStream Bridge Application
+# Aligned with Triton Frontend requirements in NVIDIA image
+fastapi>=0.115.0
+pydantic==2.10.6
+uvicorn[standard]>=0.30.0
+redis>=5.0.0
+numpy>=1.26.4,<2
+opencv-python-headless

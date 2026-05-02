@@ -5,3 +5,25 @@
 
 # Generated datasets
 backend/dataset/faces/
+
+# IDEs and Agents
+.agent/
+.vscode/
+.venv/
+.env
+
+test_videos/
+
+# Python & Node
+__pycache__/
+*.py[cod]
+node_modules/
+frontend/dist/
+
+# DeepStream & Models
+*.engine
+*.onnx
+*.onnx.data
+*.pt
+deepstream/.env
+deepstream/.setup_done

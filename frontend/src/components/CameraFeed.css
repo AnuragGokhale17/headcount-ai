@@ -1,17 +1,11 @@
 .camera-feed-container {
+    background: #000;
     position: relative;
     width: 100%;
-    flex: 1;
-    overflow: hidden;
-    background: var(--bg-card, #1a1a2e);
-    border-radius: inherit;
-}
-
-.camera-feed-canvas {
-    width: 100%;
     height: 100%;
-    object-fit: cover;
-    display: block;
+    overflow: hidden;
+    box-shadow: var(--nm-inset);
+    border-radius: inherit;
 }
 
 .camera-feed-overlay {
@@ -20,28 +14,38 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(0, 0, 0, 0.7);
-    z-index: 2;
+    background: var(--bg-base);
+    z-index: 10;
 }
 
 .camera-feed-connecting {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 12px;
-    color: var(--text-muted, #888);
-    font-size: 0.85rem;
+    gap: 20px;
+    color: var(--text-muted);
 }
 
 .connecting-spinner {
-    width: 32px;
-    height: 32px;
-    border: 3px solid rgba(255, 255, 255, 0.1);
-    border-top-color: var(--accent, #00e5ff);
+    width: 48px;
+    height: 48px;
+    border: 3px solid var(--shadow-dark);
+    border-top-color: var(--primary);
     border-radius: 50%;
-    animation: spin 1s linear infinite;
+    animation: spin 1s cubic-bezier(0.16, 1, 0.3, 1) infinite;
 }
 
 @keyframes spin {
     to { transform: rotate(360deg); }
+}
+
+/* Subtle texture for the connecting screen */
+.camera-feed-overlay::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(circle at 2px 2px, var(--shadow-dark) 1px, transparent 0);
+    background-size: 24px 24px;
+    opacity: 0.2;
+    pointer-events: none;
 }

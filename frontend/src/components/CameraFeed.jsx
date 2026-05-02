@@ -1,105 +1,70 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import React from 'react';
 import './CameraFeed.css';
 
-/**
- * CameraFeed — Canvas-based video feed that polls JPEG snapshots at ~24 FPS.
- * 
- * This replaces the MJPEG <img> approach which has known FPS issues in browsers.
- * Uses requestAnimationFrame + Image preloading for smooth playback.
- */
-function CameraFeed({ cameraId, className, alt }) {
-    const canvasRef = useRef(null);
-    const [connected, setConnected] = useState(false);
-    const [displayFps, setDisplayFps] = useState(0);
+function CameraFeed({ cameraId, className, alt, index = 0, total = 1 }) {
+    const host = window.location.hostname || "127.0.0.1";
+    const webrtcUrl = `http://${host}:8889/stream/?autoplay=true&muted=true`;
 
-    const frameUrl = `/api/cameras/${cameraId}/frame`;
+    const [isLoading, setIsLoading] = React.useState(true);
 
-    const drawLoop = useCallback(() => {
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d');
+    React.useEffect(() => {
+        setIsLoading(true);
+        const timer = setTimeout(() => setIsLoading(false), 1500);
+        return () => clearTimeout(timer);
+    }, [cameraId, total]);
 
-        let running = true;
-        let frameCount = 0;
-        let lastFpsUpdate = performance.now();
-        const TARGET_INTERVAL = 1000 / 24; // ~41.67ms for 24 FPS
-        let lastFrameTime = 0;
+    let cols = 1, rows = 1;
+    if (total <= 1) { cols = 1; rows = 1; }
+    else if (total <= 4) { cols = 2; rows = 2; }
+    else if (total <= 9) { cols = 3; rows = 3; }
+    else { cols = 4; rows = 4; }
 
-        const loadAndDraw = (timestamp) => {
-            if (!running) return;
+    const colIndex = index % cols;
+    const rowIndex = Math.floor(index / cols);
 
-            // Throttle to target FPS
-            const elapsed = timestamp - lastFrameTime;
-            if (elapsed < TARGET_INTERVAL) {
-                requestAnimationFrame(loadAndDraw);
-                return;
-            }
-            lastFrameTime = timestamp - (elapsed % TARGET_INTERVAL);
-
-            const img = new Image();
-            img.crossOrigin = 'anonymous';
-
-            img.onload = () => {
-                if (!running) return;
-                // Resize canvas to match image aspect ratio
-                if (canvas.width !== img.naturalWidth || canvas.height !== img.naturalHeight) {
-                    canvas.width = img.naturalWidth;
-                    canvas.height = img.naturalHeight;
-                }
-                ctx.drawImage(img, 0, 0);
-                setConnected(true);
-
-                frameCount++;
-                const now = performance.now();
-                if (now - lastFpsUpdate >= 1000) {
-                    setDisplayFps(frameCount);
-                    frameCount = 0;
-                    lastFpsUpdate = now;
-                }
-
-                requestAnimationFrame(loadAndDraw);
-            };
-
-            img.onerror = () => {
-                if (!running) return;
-                setConnected(false);
-                // Retry after a short delay on error
-                setTimeout(() => {
-                    if (running) requestAnimationFrame(loadAndDraw);
-                }, 500);
-            };
-
-            // Append timestamp to bust cache
-            img.src = `${frameUrl}?t=${Date.now()}`;
-        };
-
-        requestAnimationFrame(loadAndDraw);
-
-        return () => {
-            running = false;
-        };
-    }, [frameUrl]);
-
-    useEffect(() => {
-        const cleanup = drawLoop();
-        return cleanup;
-    }, [drawLoop]);
+    const effectiveCols = total > 1 ? cols : 1;
+    const effectiveRows = total > 1 ? rows : 1;
 
     return (
         <div className={`camera-feed-container ${className || ''}`}>
-            <canvas
-                ref={canvasRef}
-                className="camera-feed-canvas"
-                title={alt || 'Camera Feed'}
-            />
-            {!connected && (
+            {/* Loading Overlay */}
+            {isLoading && (
                 <div className="camera-feed-overlay">
                     <div className="camera-feed-connecting">
-                        <div className="connecting-spinner" />
-                        <span>Connecting to camera...</span>
+                        <div className="connecting-spinner"></div>
+                        <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>INITIALIZING FEED</span>
                     </div>
                 </div>
             )}
+
+            <div style={{
+                position: 'absolute',
+                top: 0, left: 0,
+                width: '100%', height: '100%',
+                overflow: 'hidden'
+            }}>
+                <iframe
+                    key={`${cameraId}-${total}-${index}`}
+                    title={`AI Feed - ${alt || cameraId}`}
+                    src={webrtcUrl}
+                    frameBorder="0"
+                    scrolling="no"
+                    allow="autoplay; fullscreen"
+                    style={{ 
+                        position: 'absolute',
+                        width: `${effectiveCols * 100}%`, 
+                        height: `${effectiveRows * 100}%`,
+                        left: `-${colIndex * 100}%`,
+                        top: `-${rowIndex * 100}%`,
+                        border: 'none',
+                        opacity: isLoading ? 0 : 1,
+                        transition: 'opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1)',
+                        pointerEvents: 'none'
+                    }}
+                />
+            </div>
+            
+            <div style={{ position: 'absolute', inset: 0, zIndex: 5 }} />
         </div>
     );
 }

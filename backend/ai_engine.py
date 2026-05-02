@@ -141,13 +141,7 @@ class AIAnalyticsEngine:
             self.events.appendleft(event)
 
     def update(self, detections, in_zone_a, in_zone_b, counted_in_ids, people_in_count, people_out_count, curr_time):
-        occupancy = len(counted_in_ids)
-
-        if len(self.occupancy_history) == 0 or (curr_time - (self.occupancy_history[-1][1] if self.occupancy_history else 0)) >= 5:
-            self.occupancy_history.append((occupancy, curr_time))
-            self._update_predictions(occupancy, curr_time)
-            self._update_system_status(occupancy)
-
+        """Called by camera threads for behavioral analytics (dwell, loitering)."""
         # Persist state every 30 seconds
         if (curr_time - self._last_persist_time) > 30:
             self._last_persist_time = curr_time
@@ -199,6 +193,16 @@ class AIAnalyticsEngine:
                         self.person_dwell_times.append(dwell)
                     del self.person_enter_time[tid]
                     self.active_dwell.pop(tid, None)
+
+    def update_occupancy(self, occupancy):
+        """Called periodically with the aggregated building headcount for forecasting."""
+        curr_time = time.time()
+        with self.lock:
+            # Update history every 10s
+            if len(self.occupancy_history) == 0 or (curr_time - self.occupancy_history[-1][1]) >= 10:
+                self.occupancy_history.append((occupancy, curr_time))
+                self._update_predictions(occupancy, curr_time)
+                self._update_system_status(occupancy)
 
     def log_entry(self, tracker_id, curr_time):
         tracker_id = int(tracker_id)

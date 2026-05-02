@@ -12,7 +12,7 @@ Starts Flask server on port 5000 with:
 import os
 import threading
 import time
-from flask import Flask, send_from_directory
+from flask import Flask, send_from_directory, jsonify
 
 from backend.memory import MemoryStore
 from backend.ai_engine import AIAnalyticsEngine
@@ -98,13 +98,18 @@ def serve_react_assets(path):
 # --- AREA MONITOR SYNC THREAD ---
 # ==============================================================================
 def _area_sync_loop():
-    """Periodically feeds area stats from camera_manager into area_monitor."""
+    """Periodically feeds area stats from camera_manager into area_monitor and AI engine."""
     while True:
         time.sleep(10)
         try:
             area_stats = camera_manager.get_area_stats()
+            total_occ = 0
             for area_name, stats in area_stats.items():
                 area_monitor.update_area(area_name, stats["people_count"])
+                total_occ += stats["people_count"]
+            
+            # Update AI engine occupancy for building-wide crowd forecasting
+            ai_engine.update_occupancy(total_occ)
         except Exception as e:
             print(f"  ⚠️ Area sync error: {e}")
 

@@ -1,142 +1,129 @@
-/* === DESIGN TOKENS — DARK (Premium Cyber-Physical) === */
-:root,
-[data-theme="dark"] {
-    --bg-body: #05070a;
-    --bg-panel: rgba(11, 15, 25, 0.7);
-    --bg-card: rgba(15, 21, 36, 0.6);
-    --bg-card-hover: rgba(22, 30, 50, 0.75);
-    --bg-input: rgba(10, 14, 25, 0.8);
-    --primary: #8b5cf6;
-    --primary-glow: rgba(139, 92, 246, 0.4);
-    --accent: #00e5ff;
-    --accent-glow: rgba(0, 229, 255, 0.3);
-    --success: #10b981;
-    --success-dim: rgba(16, 185, 129, 0.15);
-    --warning: #f59e0b;
-    --warning-dim: rgba(245, 158, 11, 0.15);
-    --danger: #ff4757;
-    --danger-dim: rgba(255, 71, 87, 0.15);
-    --info: #3b82f6;
-    --text-main: #f8fafc;
-    --text-secondary: #cbd5e1;
-    --text-muted: #64748b;
-    --border: rgba(255, 255, 255, 0.05);
-    --border-light: rgba(255, 255, 255, 0.12);
-    --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.4);
-    --glass-blur: blur(20px);
-    --logo-file: url('/static/solars.png');
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+    /* Corporate Trust Palette */
+    --bg-base: #f8fafc; /* Slate 50 */
+    --bg-surface: #ffffff;
+    
+    /* Brand Colors */
+    --primary: #4f46e5; /* Indigo 600 */
+    --primary-light: #6366f1;
+    --secondary: #7c3aed; /* Violet 600 */
+    --accent: #10b981; /* Emerald 500 */
+    
+    /* Gradients */
+    --grad-primary: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+    --grad-surface: linear-gradient(135deg, #f8fafc 0%, #eff6ff 100%);
+    
+    /* Text Colors */
+    --text-main: #0f172a; /* Slate 900 */
+    --text-secondary: #475569; /* Slate 600 */
+    --text-muted: #64748b; /* Slate 500 */
+    
+    /* Borders */
+    --border: #e2e8f0; /* Slate 200 */
+    --border-light: #f1f5f9; /* Slate 100 */
+    
+    /* Signature Shadows (Colored) */
+    --shadow-soft: 0 4px 20px -2px rgba(79, 70, 229, 0.08);
+    --shadow-elevated: 0 10px 25px -5px rgba(79, 70, 229, 0.12), 0 8px 10px -6px rgba(79, 70, 229, 0.08);
+    --shadow-button: 0 4px 14px 0 rgba(79, 70, 229, 0.25);
+    
+    /* Typography */
+    --font-main: 'Plus Jakarta Sans', sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
 }
 
-/* === DESIGN TOKENS — LIGHT (Clean Glass) === */
-[data-theme="light"] {
-    --bg-body: #f1f5f9;
-    --bg-panel: rgba(255, 255, 255, 0.8);
-    --bg-card: rgba(255, 255, 255, 0.6);
-    --bg-card-hover: rgba(255, 255, 255, 0.9);
-    --bg-input: rgba(241, 245, 249, 0.8);
-    --primary: #4f46e5;
-    --primary-glow: rgba(79, 70, 229, 0.2);
-    --accent: #0ea5e9;
-    --accent-glow: rgba(14, 165, 233, 0.2);
-    --success: #059669;
-    --success-dim: rgba(5, 150, 105, 0.1);
-    --warning: #d97706;
-    --warning-dim: rgba(217, 119, 6, 0.08);
-    --danger: #e11d48;
-    --danger-dim: rgba(225, 29, 72, 0.08);
-    --info: #2563eb;
-    --text-main: #0f172a;
-    --text-secondary: #334155;
-    --text-muted: #64748b;
-    --border: rgba(0, 0, 0, 0.05);
-    --border-light: rgba(0, 0, 0, 0.1);
-    --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.05);
-    --glass-blur: blur(20px);
-    --logo-file: url('/static/solarsred.png');
-}
-
+/* Global Reset & Base */
 * {
-    box-sizing: border-box;
     margin: 0;
     padding: 0;
+    box-sizing: border-box;
 }
 
 body {
-    font-family: 'Outfit', -apple-system, sans-serif;
-    background: var(--bg-body);
+    background-color: var(--bg-base);
     color: var(--text-main);
-    height: 100vh;
+    font-family: var(--font-main);
+    -webkit-font-smoothing: antialiased;
     overflow: hidden;
-    transition: background 0.3s, color 0.3s;
+    height: 100vh;
+}
+
+h1, h2, h3, h4, .brand-text {
+    font-family: var(--font-main);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+}
+
+.mono {
+    font-family: var(--font-mono);
 }
 
 #root {
     height: 100vh;
     display: flex;
     flex-direction: column;
+    position: relative;
+    overflow: hidden;
 }
 
-/* === SCROLLBAR === */
+/* Atmospheric Background Blobs */
+.bg-blob {
+    position: absolute;
+    width: 600px;
+    height: 600px;
+    border-radius: 50%;
+    filter: blur(120px);
+    opacity: 0.15;
+    z-index: -1;
+    pointer-events: none;
+    animation: float 20s infinite alternate ease-in-out;
+}
+
+.blob-1 {
+    top: -100px;
+    right: -100px;
+    background: var(--primary);
+}
+
+.blob-2 {
+    bottom: -150px;
+    left: -100px;
+    background: var(--secondary);
+    animation-delay: -5s;
+}
+
+@keyframes float {
+    from { transform: translate(0, 0) scale(1); }
+    to { transform: translate(50px, 50px) scale(1.1); }
+}
+
+/* Utility: Gradient Text */
+.text-gradient {
+    background: var(--grad-primary);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    display: inline-block;
+}
+
+/* Transitions */
+* {
+    transition: all 0.25s ease-out;
+}
+
+/* Custom Scrollbar */
 ::-webkit-scrollbar {
-    width: 4px;
+    width: 6px;
 }
-
 ::-webkit-scrollbar-track {
     background: transparent;
 }
-
 ::-webkit-scrollbar-thumb {
-    background: var(--border-light);
-    border-radius: 2px;
+    background: var(--border);
+    border-radius: 10px;
 }
-
-/* === ANIMATIONS === */
-@keyframes pulse-glow {
-
-    0%,
-    100% {
-        opacity: 1;
-    }
-
-    50% {
-        opacity: 0.4;
-    }
-}
-
-@keyframes pulse-border {
-
-    0%,
-    100% {
-        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.3);
-    }
-
-    50% {
-        box-shadow: 0 0 15px 2px rgba(239, 68, 68, 0.15);
-    }
-}
-
-@keyframes slideIn {
-    from {
-        opacity: 0;
-        transform: translateY(-4px);
-    }
-
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
-@keyframes fadeIn {
-    from {
-        opacity: 0;
-    }
-
-    to {
-        opacity: 1;
-    }
-}
-
-.mono {
-    font-family: 'JetBrains Mono', monospace;
-}
+::-webkit-scrollbar-thumb:hover {
+    background: var(--text-muted);
+}

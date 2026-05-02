@@ -1,0 +1,52 @@
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: headcount_redis
+    ports:
+      - "6379:6379"
+    command: redis-server --bind 0.0.0.0 --protected-mode no
+    restart: unless-stopped
+
+  deepstream:
+    image: nvcr.io/nvidia/deepstream:9.0-triton-multiarch
+    container_name: headcount_deepstream
+    ipc: host
+    ports:
+      - "8010:8010"
+      - "8554:8554"
+      - "8555:8555"
+    privileged: true
+    depends_on:
+      - redis
+      - mediamtx
+    environment:
+      - DISPLAY=$DISPLAY
+      - REDIS_HOST=redis
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - NVIDIA_VISIBLE_DEVICES=all
+    volumes:
+      - ../:/workspace
+      - /tmp/.X11-unix:/tmp/.X11-unix
+    working_dir: /workspace/deepstream
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    # Launch the bridge application directly on startup
+    command: bash /workspace/deepstream/start_ds.sh
+    restart: unless-stopped
+
+  mediamtx:
+    image: bluenviron/mediamtx:latest
+    container_name: mediamtx_webrtc_bridge
+    ports:
+      - "8889:8889"       # WebRTC API port
+      - "8189:8189/udp"   # WebRTC ICE UDP port
+      - "8189:8189/tcp"   # WebRTC ICE TCP port
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml
+    restart: unless-stopped
+

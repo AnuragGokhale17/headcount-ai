@@ -54,6 +54,37 @@ below the configured limit of {expected_limit} for {duration_minutes} minutes.
                 print(f"  📧 Alert email sent for area '{area}': {missing} missing")
             return success
 
+    def send_capacity_alert(self, area, current_count, limit):
+        """Send email alert for capacity reached/exceeded in an area."""
+        with self._lock:
+            now = time.time()
+            last = self._last_sent.get(f"{area}_capacity", 0)
+            cooldown_sec = config.ALERT_COOLDOWN_MINUTES * 60
+
+            if (now - last) < cooldown_sec:
+                return False  # Still in cooldown
+
+            # Build email
+            subject = f"🔴 ALERT: Capacity Reached in {area}"
+            body = f"""
+Headcount Alert — {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+Area: {area}
+Max Capacity Limit: {limit}
+Current Count: {current_count}
+
+This alert was triggered because the headcount in "{area}" has reached or exceeded 
+the configured safety limit of {limit} people.
+
+— Headcount AI Command Center
+"""
+
+            success = self._send_email(subject, body.strip())
+            if success:
+                self._last_sent[f"{area}_capacity"] = now
+                print(f"  📧 Capacity alert email sent for area '{area}': {current_count}/{limit}")
+            return success
+
     def _send_email(self, subject, body):
         """Send email via SMTP. Returns True on success."""
         if not config.SMTP_USER or not config.ALERT_RECIPIENTS:

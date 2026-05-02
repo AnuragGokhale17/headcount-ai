@@ -1,167 +1,167 @@
-/* === ZONE DRAWER MODAL === */
 .zone-drawer-overlay {
     position: fixed;
     top: 0;
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0, 0, 0, 0.75);
-    backdrop-filter: blur(8px);
-    z-index: 1000;
+    background: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(12px);
+    z-index: 1100;
     display: flex;
     align-items: center;
     justify-content: center;
-    animation: fadeIn 0.2s ease;
+    animation: fadeIn 0.3s ease;
 }
 
 .zone-drawer-modal {
-    background: var(--bg-panel);
+    background: var(--bg-surface);
     border: 1px solid var(--border-light);
-    border-radius: 16px;
+    border-radius: 24px;
     width: 90vw;
-    max-width: 1100px;
+    max-width: 1200px;
     max-height: 90vh;
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.6);
+    box-shadow: var(--shadow-elevated);
+    animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* Header */
 .zd-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 16px 24px;
-    border-bottom: 1px solid var(--border);
+    padding: 24px 40px;
+    border-bottom: 1px solid var(--border-light);
 }
 
 .zd-header h2 {
-    font-size: 1rem;
-    font-weight: 700;
-    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 800;
+    color: var(--text-main);
+    letter-spacing: -0.02em;
 }
 
 .zd-close {
-    background: var(--bg-card);
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: var(--bg-base);
     border: 1px solid var(--border);
-    border-radius: 8px;
     color: var(--text-muted);
-    width: 32px;
-    height: 32px;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    font-size: 1rem;
     transition: all 0.2s;
 }
 
 .zd-close:hover {
-    background: var(--danger-dim);
-    color: var(--danger);
-    border-color: var(--danger);
+    background: #fee2e2;
+    color: #ef4444;
+    border-color: #fecaca;
 }
 
-/* Toolbar */
 .zd-toolbar {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 12px 24px;
-    border-bottom: 1px solid var(--border);
-    gap: 12px;
-    flex-wrap: wrap;
+    padding: 16px 40px;
+    background: var(--bg-base);
+    border-bottom: 1px solid var(--border-light);
+    gap: 24px;
 }
 
 .zd-zone-tabs {
     display: flex;
-    gap: 8px;
+    gap: 32px;
+    padding: 0 4px;
 }
 
 .zd-tab {
-    padding: 6px 14px;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: var(--bg-card);
-    color: var(--text-secondary);
-    font-size: 0.75rem;
-    font-weight: 600;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    font-weight: 700;
+    padding: 20px 0;
     cursor: pointer;
+    border-bottom: 2px solid transparent;
     transition: all 0.2s;
-    font-family: 'Inter', sans-serif;
-}
-
-.zd-tab:hover {
-    background: var(--bg-card-hover);
+    position: relative;
 }
 
 .zd-tab-a-active {
-    background: var(--danger-dim) !important;
-    border-color: rgba(239, 68, 68, 0.4) !important;
-    color: var(--danger) !important;
+    color: #ef4444 !important;
+}
+
+.zd-tab-a-active::after {
+    content: '';
+    position: absolute;
+    bottom: -1px;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: #ef4444;
+    border-radius: 2px 2px 0 0;
 }
 
 .zd-tab-b-active {
-    background: var(--success-dim) !important;
-    border-color: rgba(16, 185, 129, 0.4) !important;
-    color: var(--success) !important;
+    color: var(--accent) !important;
+}
+
+.zd-tab-b-active::after {
+    content: '';
+    position: absolute;
+    bottom: -1px;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: var(--accent);
+    border-radius: 2px 2px 0 0;
 }
 
 .zd-actions {
     display: flex;
-    gap: 6px;
+    gap: 12px;
 }
 
-/* Buttons */
 .zd-btn {
-    padding: 6px 14px;
-    border-radius: 8px;
+    padding: 8px 16px;
+    border-radius: 10px;
     border: 1px solid var(--border);
-    background: var(--bg-card);
+    background: var(--bg-surface);
     color: var(--text-secondary);
-    font-size: 0.75rem;
+    font-size: 0.8rem;
     font-weight: 600;
     cursor: pointer;
-    transition: all 0.2s;
-    font-family: 'Inter', sans-serif;
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
 .zd-btn:hover {
-    background: var(--bg-card-hover);
-    color: var(--text-main);
-}
-
-.zd-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
-.zd-btn-sm {
-    font-size: 0.7rem;
-    padding: 4px 10px;
+    background: var(--bg-base);
+    border-color: var(--primary-light);
+    color: var(--primary);
 }
 
 .zd-btn-primary {
-    background: linear-gradient(135deg, var(--primary), #818cf8) !important;
-    border-color: var(--primary) !important;
+    background: var(--grad-primary) !important;
+    border: none !important;
     color: white !important;
+    font-weight: 700;
+    box-shadow: var(--shadow-button);
 }
 
-.zd-btn-primary:hover {
-    box-shadow: 0 4px 15px var(--primary-glow);
-    transform: translateY(-1px);
-}
-
-/* Canvas Area */
 .zd-canvas-wrap {
     flex: 1;
     position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: #000;
-    min-height: 300px;
+    background: #0f172a;
+    min-height: 400px;
     overflow: hidden;
 }
 
@@ -169,7 +169,6 @@
     max-width: 100%;
     max-height: 100%;
     object-fit: contain;
-    display: block;
 }
 
 .zd-canvas {
@@ -182,39 +181,45 @@
 
 .zd-loading {
     position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    color: var(--text-muted);
-    font-size: 0.85rem;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 0.9rem;
+    font-weight: 600;
 }
 
-/* Instructions */
 .zd-instructions {
-    padding: 10px 24px;
-    font-size: 0.7rem;
+    padding: 16px 40px;
+    font-size: 0.8rem;
     color: var(--text-muted);
-    border-top: 1px solid var(--border);
-    line-height: 1.4;
+    background: var(--bg-base);
+    border-top: 1px solid var(--border-light);
+    line-height: 1.5;
 }
 
-/* Footer */
 .zd-footer {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 14px 24px;
-    border-top: 1px solid var(--border);
-    gap: 12px;
+    padding: 24px 40px;
+    border-top: 1px solid var(--border-light);
+    background: var(--bg-surface);
 }
 
 .zd-message {
-    font-size: 0.75rem;
-    font-weight: 600;
+    font-size: 0.85rem;
+    font-weight: 700;
 }
 
 .zd-footer-actions {
     display: flex;
-    gap: 8px;
-    margin-left: auto;
+    gap: 16px;
+}
+
+@keyframes slideUp {
+    from { opacity: 0; transform: translateY(40px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
 }

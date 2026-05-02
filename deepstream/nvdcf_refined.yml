@@ -1,0 +1,25 @@
+%YAML:1.0
+NvMultiObjectTracker:
+  useUniqueID: 1
+  maxTargetsPerStream: 150
+  enableBatchProcess: 1
+  
+  # Tracker-wide settings
+  minDetectorConfidence: 0.12
+  probationAge: 2
+  maxShadowTrackingAge: 90
+  earlyTerminationAge: 1
+
+  NvDCF:
+    visualFeatureEst: 1
+    colorNamesEst: 1
+    maxImageScale: 640
+    minImageScale: 320
+    filterType: 1
+    filterSize: 1
+    matchingThreshold: 0.8
+    minCorrelationConfidence: 0.05
+    useKalmanFilter: 1
+    kalmanProcessNoiseVar: 0.01
+    kalmanMeasurementNoiseVar: 0.1
+    kalmanVelocityNoiseVar: 0.05
