@@ -95,10 +95,9 @@ function ZoneDrawer({ cameraId, onClose, onSaved }) {
     // Handle click on canvas
     const handleCanvasClick = (e) => {
         const canvas = canvasRef.current;
-        const img = imgRef.current;
-        if (!canvas || !img) return;
+        if (!canvas) return;
 
-        const rect = img.getBoundingClientRect();
+        const rect = canvas.getBoundingClientRect();
         const scaleX = imgSize.w / rect.width;
         const scaleY = imgSize.h / rect.height;
 
@@ -177,19 +176,19 @@ function ZoneDrawer({ cameraId, onClose, onSaved }) {
                             className={`zd-tab ${activeZone === 'A' ? 'zd-tab-a-active' : ''}`}
                             onClick={() => setActiveZone('A')}
                         >
-                            Zone A (Entry) · {zoneA.length} pts
+                            Entry Area (A) · {zoneA.length} pts
                         </button>
                         <button
                             className={`zd-tab ${activeZone === 'B' ? 'zd-tab-b-active' : ''}`}
                             onClick={() => setActiveZone('B')}
                         >
-                            Zone B (Inside) · {zoneB.length} pts
+                            Inside Area (B) · {zoneB.length} pts
                         </button>
                     </div>
                     <div className="zd-actions">
-                        <button className="zd-btn zd-btn-sm" onClick={undo}>↩ Undo</button>
-                        <button className="zd-btn zd-btn-sm" onClick={clearActive}>🗑 Clear</button>
-                        <button className="zd-btn zd-btn-sm" onClick={refreshSnapshot}>🔄 Refresh</button>
+                        <button className="zd-btn" onClick={undo}>Undo Last</button>
+                        <button className="zd-btn" onClick={clearActive}>Clear Zone</button>
+                        <button className="zd-btn" onClick={refreshSnapshot}>Reload Feed</button>
                     </div>
                 </div>
 
@@ -201,12 +200,15 @@ function ZoneDrawer({ cameraId, onClose, onSaved }) {
                         alt="Camera snapshot"
                         className="zd-snapshot"
                         onLoad={handleImgLoad}
-                        crossOrigin="anonymous"
                     />
                     <canvas
                         ref={canvasRef}
                         className="zd-canvas"
-                        onClick={handleCanvasClick}
+                        onMouseDown={handleCanvasClick}
+                        style={{
+                            width: imgLoaded ? `${imgRef.current.clientWidth}px` : '0',
+                            height: imgLoaded ? `${imgRef.current.clientHeight}px` : '0'
+                        }}
                     />
                     {!imgLoaded && (
                         <div className="zd-loading">📷 Loading camera snapshot...</div>

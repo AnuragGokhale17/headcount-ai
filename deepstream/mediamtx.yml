@@ -1,0 +1,28 @@
+###############################################
+# MediaMTX Configuration — Headcount AI
+###############################################
+
+# Logging
+logLevel: info
+logDestinations: [stdout]
+
+# Disable protocols we don't need
+rtsp: yes
+rtmp: yes
+hls: no
+srt: no
+
+# RTSP server
+rtspAddress: :8554
+
+# WebRTC server (public — serves the frontend)
+webrtc: yes
+webrtcAddress: :8889
+
+# ICE candidates for WebRTC
+webrtcICEServers2: []
+
+# Paths — Push from DeepStream
+paths:
+  stream:
+    source: publisher

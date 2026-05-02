@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { fetchCameras, addCamera, deleteCamera, updateCamera, fetchAreas, fetchAreaAlerts, cameraFeedUrl } from '../api';
+import { fetchCameras, addCamera, deleteCamera, updateCamera, fetchAreas, fetchAreaAlerts, cameraFeedUrl, setAreaLimit, fetchAreaStatus } from '../api';
 import CameraFeed from './CameraFeed';
+import SpatialHeatmap from './SpatialHeatmap';
 import './CameraManager.css';
 
 function CameraManager({ onClose }) {
@@ -20,15 +21,26 @@ function CameraManager({ onClose }) {
     const [editUrl, setEditUrl] = useState('');
     const [editArea, setEditArea] = useState('');
     const [editPlant, setEditPlant] = useState('');
+    const [areaLimits, setAreaLimits] = useState({});
+    const [savingLimit, setSavingLimit] = useState(null); // area name being saved
+    const [activeHeatmap, setActiveHeatmap] = useState(null);
+    const [error, setError] = useState(null);
 
     const loadData = useCallback(async () => {
         try {
-            const [cams, areaData, alertData] = await Promise.all([
-                fetchCameras(), fetchAreas(), fetchAreaAlerts()
+            const [cams, areaData, alertData, statusData] = await Promise.all([
+                fetchCameras(), fetchAreas(), fetchAreaAlerts(), fetchAreaStatus()
             ]);
             setCameras(cams);
             setAreas(areaData);
             setAlerts(alertData);
+            
+            // Map limits from statusData
+            const limits = {};
+            Object.entries(statusData).forEach(([area, info]) => {
+                limits[area] = info.people_limit;
+            });
+            setAreaLimits(limits);
         } catch (e) {
             console.error('Camera data load error:', e);
         }
@@ -45,15 +57,20 @@ function CameraManager({ onClose }) {
         if (!newName.trim() || !newUrl.trim()) return;
         setLoading(true);
         try {
-            await addCamera(newName.trim(), newUrl.trim(), newArea.trim() || 'default', newPlant.trim() || 'Plant 1');
+            const result = await addCamera(newName.trim(), newUrl.trim(), newArea.trim() || 'default', newPlant.trim() || 'Plant 1');
+            if (result.warning) {
+                alert(result.warning);
+            }
             setNewName('');
             setNewUrl('');
             setNewArea('');
             setNewPlant('');
             setShowAddForm(false);
+            setError(null);
             await loadData();
         } catch (e) {
             console.error('Add camera error:', e);
+            setError(e.message || 'Failed to add camera');
         }
         setLoading(false);
     };
@@ -92,6 +109,22 @@ function CameraManager({ onClose }) {
             console.error('Update camera error:', e);
         }
         setLoading(false);
+    };
+
+    const handleSaveLimit = async (area) => {
+        const limit = areaLimits[area];
+        setSavingLimit(area);
+        try {
+            await setAreaLimit(area, limit);
+            await loadData();
+        } catch (e) {
+            console.error('Save limit error:', e);
+        }
+        setSavingLimit(null);
+    };
+
+    const handleLimitChange = (area, val) => {
+        setAreaLimits(prev => ({ ...prev, [area]: parseInt(val) || 0 }));
     };
 
     return (
@@ -156,6 +189,7 @@ function CameraManager({ onClose }) {
                                             value={newArea} onChange={e => setNewArea(e.target.value)}
                                         />
                                     </div>
+                                    {error && <div className="cm-error-msg">❌ {error}</div>}
                                     <button type="submit" className="cm-submit-btn" disabled={loading}>
                                         {loading ? 'Adding...' : '🚀 Add & Start'}
                                     </button>
@@ -204,15 +238,28 @@ function CameraManager({ onClose }) {
                                                         <button className="cm-view-btn" onClick={() => setSelectedFeed(selectedFeed === cam.id ? null : cam.id)} title="View Feed">
                                                             {selectedFeed === cam.id ? '🔽' : '👁️'}
                                                         </button>
+                                                        <button className="cm-view-btn cm-fire-btn" onClick={() => setActiveHeatmap(cam)} title="Strategic Heatmap">
+                                                            🔥
+                                                        </button>
                                                         <button className="cm-del-btn" onClick={() => handleDelete(cam.id)} title="Remove">🗑️</button>
                                                     </div>
                                                 </div>
                                                 <div className="cm-card-meta">
-                                                    <span className="cm-area-tag">Plant: {cam.plant} | Area: {cam.area}</span>
-                                                    <span className="cm-people-count">{cam.people_count || 0} people</span>
-                                                    <span className="cm-fps">{cam.fps || 0} FPS</span>
-                                                    {cam.is_running && <span className="cm-status running">Running</span>}
-                                                    {!cam.is_running && <span className="cm-status stopped">Stopped</span>}
+                                                    <span className="cm-area-tag">{cam.plant} | {cam.area}</span>
+                                                    <div className="cm-card-stats">
+                                                        <div className="cm-card-stat">
+                                                            <span className="cm-card-stat-label">Detecting</span>
+                                                            <span className="cm-card-stat-value">{cam.people_count || 0}</span>
+                                                        </div>
+                                                        <div className="cm-card-stat">
+                                                            <span className="cm-card-stat-label">Throughput</span>
+                                                            <span className="cm-card-stat-value">{(cam.in || 0) + (cam.out || 0)}</span>
+                                                        </div>
+                                                        <div className="cm-card-stat">
+                                                            <span className="cm-card-stat-label">Performance</span>
+                                                            <span className="cm-card-stat-value">{cam.fps || 0} FPS</span>
+                                                        </div>
+                                                    </div>
                                                 </div>
                                                 {cam.last_error && (
                                                     <div className="cm-card-error">⚠️ {cam.last_error}</div>
@@ -247,10 +294,26 @@ function CameraManager({ onClose }) {
                                             <span className="cm-stat-value">{data.cameras}</span>
                                             <span className="cm-stat-label">Cameras</span>
                                         </div>
-                                        <div className="cm-area-stat">
-                                            <span className="cm-stat-value">{data.connected}/{data.cameras}</span>
-                                            <span className="cm-stat-label">Connected</span>
+                                    </div>
+                                    
+                                    <div className="cm-area-limit-section">
+                                        <label>Capacity Limit</label>
+                                        <div className="cm-limit-row">
+                                            <input 
+                                                type="number" 
+                                                min="0"
+                                                value={areaLimits[area] ?? 0} 
+                                                onChange={e => handleLimitChange(area, e.target.value)}
+                                            />
+                                            <button 
+                                                className="cm-limit-save" 
+                                                onClick={() => handleSaveLimit(area)}
+                                                disabled={savingLimit === area}
+                                            >
+                                                {savingLimit === area ? '...' : 'Set'}
+                                            </button>
                                         </div>
+                                        <p className="cm-limit-hint">Alerts trigger when {areaLimits[area] || 'X'} people are detected.</p>
                                     </div>
                                 </div>
                             ))}
@@ -278,6 +341,13 @@ function CameraManager({ onClose }) {
                     )}
                 </div>
             </div>
+
+            {activeHeatmap && (
+                <SpatialHeatmap 
+                    camera={activeHeatmap} 
+                    onClose={() => setActiveHeatmap(null)} 
+                />
+            )}
         </div>
     );
 }

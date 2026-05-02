@@ -1,0 +1,14 @@
+[property]
+enable=1
+# Matches your video resolution
+config-width=1280
+config-height=720
+osd-mode=2
+display-font-size=24
+
+[roi-filtering-stream-0]
+enable=1
+# Draws a box covering the whole 1280x720 screen
+roi-Headcount=0;0;1280;0;1280;720;0;720
+inverse-roi=0
+class-id=0

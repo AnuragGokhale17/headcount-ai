@@ -139,6 +139,11 @@ export async function saveCameraZones(cameraId, zoneA, zoneB) {
     return res.json();
 }
 
+export async function fetchHeatmap(cameraId) {
+    const res = await fetch(`${API_BASE}/api/cameras/${cameraId}/heatmap`);
+    return res.json();
+}
+
 export function cameraSnapshotUrl(cameraId) {
     return `${API_BASE}/api/cameras/${cameraId}/snapshot`;
 }

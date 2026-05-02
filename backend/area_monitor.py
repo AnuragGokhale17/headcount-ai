@@ -75,12 +75,47 @@ class AreaMonitor:
 
             # Check against configured limit
             area_limit = self._area_limits.get(area, 0)
-            if area_limit > 0 and people_count < area_limit:
-                # Count is below limit — start or continue timer
-                if area not in self._below_limit_start:
-                    self._below_limit_start[area] = time.time()
+            if area_limit > 0:
+                if people_count >= area_limit:
+                    # CAPACITY EXCEEDED / REACHED
+                    # Trigger immediate alert (respecting email cooldown)
+                    alert = {
+                        "area": area,
+                        "type": "CAPACITY_EXCEEDED",
+                        "timestamp": datetime.now().isoformat(),
+                        "message": (
+                            f"🔴 Capacity reached in '{area}': {people_count} people detected "
+                            f"(Limit: {area_limit})."
+                        ),
+                        "limit": area_limit,
+                        "current_count": people_count,
+                    }
+                    self.alerts.append(alert)
+                    print(f"  🚨 ALERT: {alert['message']}")
+
+                    # Log to AI engine
+                    if self.ai_engine:
+                        self.ai_engine._log_event(
+                            "CRITICAL",
+                            f"🔴 Capacity Reached — {area}",
+                            alert["message"]
+                        )
+
+                    # Send email alert
+                    email_alerter.send_capacity_alert(area, people_count, area_limit)
+
+                    # Also clear the "below limit" timer if it was running
+                    self._below_limit_start.pop(area, None)
+                
+                elif people_count < area_limit:
+                    # Count is below limit — start or continue timer for "Missing Workers" alert
+                    if area not in self._below_limit_start:
+                        self._below_limit_start[area] = time.time()
+                else:
+                    # Recovery or exactly at limit (already handled above)
+                    self._below_limit_start.pop(area, None)
             else:
-                # Count recovered or no limit set — cancel timer
+                # No limit set — cancel "below limit" timer
                 self._below_limit_start.pop(area, None)
 
     def _monitor_loop(self):

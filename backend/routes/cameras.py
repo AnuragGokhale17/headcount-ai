@@ -62,8 +62,16 @@ def add_camera():
 
     camera_id = _memory.add_camera(name, url, area, plant)
 
-    # Start processing immediately
-    _camera_manager.start_camera(camera_id, name, url, area, plant)
+    # Start processing immediately and sync with DeepStream
+    success, error = _camera_manager.start_camera(camera_id, name, url, area, plant)
+
+    if not success:
+        # Camera is in DB but engine failed to start. Tell user but keep in DB.
+        return jsonify({
+            "id": camera_id, 
+            "name": name, 
+            "warning": f"Camera added to database but engine failed to sync: {error}"
+        }), 201
 
     return jsonify({"id": camera_id, "name": name, "url": url, "area": area, "plant": plant}), 201
 
@@ -129,6 +137,15 @@ def camera_feed(camera_id):
                 time.sleep(0.1)
 
     return Response(generate(), mimetype='multipart/x-mixed-replace; boundary=frame')
+
+
+@cameras_bp.route("/api/cameras/<int:camera_id>/heatmap")
+def camera_heatmap(camera_id):
+    """Return the spatial heatmap grid for a specific camera."""
+    heatmap = _camera_manager.get_camera_heatmap(camera_id)
+    if heatmap is not None:
+        return jsonify(heatmap)
+    return jsonify({"error": "Heatmap not available"}), 404
 
 
 # =========================================================================

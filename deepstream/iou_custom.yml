@@ -1,0 +1,16 @@
+%YAML:1.0
+NvMultiObjectTracker:
+  useUniqueID: 1
+  maxTargetsPerStream: 150
+  enableBatchProcess: 1
+  
+  TargetManagement:
+    minDetectorConfidence: 0.0
+    probationAge: 1
+    maxShadowTrackingAge: 90
+    earlyTerminationAge: 1
+
+  IOU:
+    iouThreshold: 0.02
+    stateEstimatorType: 1
+    dataAssociatorType: 0

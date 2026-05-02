@@ -20,16 +20,16 @@ TARGET_STREAM_FPS = 24
 # ==============================================================================
 # --- SAFETY ---
 # ==============================================================================
-SAFETY_LIMIT = 10
+SAFETY_LIMIT = 5
 
 # ==============================================================================
 # --- DETECTION ---
 # ==============================================================================
-CONFIDENCE_THRESHOLD = 0.45  # Lowered back to allow detection of partially occluded seated people
+CONFIDENCE_THRESHOLD = 0.20  # Lowered to match DeepStream sensitivity and ensure all visible people are counted
 IOU_THRESHOLD = 0.45
 ENTRY_DEBOUNCE_SEC = 0.5
 ENTRY_MIN_CONFIDENCE = 0.60  # Require decent confidence to log an entry
-GHOST_TIMEOUT_SEC = 3        # Clear ghosts faster
+GHOST_TIMEOUT_SEC = 5        # Maintain count stability during brief tracker drops
 
 # ==============================================================================
 # --- EMAIL ALERTS ---
