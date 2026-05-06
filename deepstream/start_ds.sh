@@ -2,102 +2,79 @@
 set -e
 
 echo "=============================================="
-echo "  🧠 Headcount AI — DeepStream Bridge Boot"
+echo "  🧠 Headcount AI — DeepStream Triton Boot"
 echo "=============================================="
 
-SETUP_FLAG="/workspace/deepstream/.setup_done"
+# 1. PATH DEFINITIONS
+DS_DIR="/opt/nvidia/deepstream/deepstream"
+VENV_PATH="$DS_DIR/sources/deepstream_python_apps/pyds"
 
-if [ ! -f "$SETUP_FLAG" ]; then
-    echo "🛠️ First-time setup detected. This may take a few minutes..."
-    
-    # 1. Temporarily disable the problematic NVIDIA repo to avoid 403 errors on non-essential packages
-    echo "📦 Optimizing repositories..."
-    mkdir -p /etc/apt/sources.list.d.bak
-    mv /etc/apt/sources.list.d/cuda*.list /etc/apt/sources.list.d.bak/ 2>/dev/null || true
+# 2. SYSTEM PREP (SSL & Build Tools)
+echo "🔧 Ensuring system tools..."
+git config --global http.sslVerify false
+dpkg --configure -a || true
+apt-get update || true
+apt-get install -y git cmake build-essential libglib2.0-dev \
+    libgstrtspserver-1.0-dev libgstreamer1.0-dev ca-certificates python3-pip python3-venv
 
-    echo "📦 Updating system repositories..."
-    apt-get update -o "Acquire::https::Verify-Peer=false" || true
-
-    # 2. Install Build Dependencies (with SSL bypass and skipping non-essentials)
-    echo "📦 Installing build dependencies..."
-    DEBIAN_FRONTEND=noninteractive apt-get install -y \
-        -o "Acquire::https::Verify-Peer=false" \
-        --no-install-recommends \
-        --allow-unauthenticated \
-        --fix-missing \
-        build-essential \
-        python3-gi python3-dev python3-gst-1.0 \
-        python3-opencv libglib2.0-dev libgirepository1.0-dev \
-        libcairo2-dev libssl-dev cmake g++ git \
-        libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
-        libhiredis-dev \
-        libmpg123-dev libflac-dev libdvdread8 libdvdnav4 \
-        libmjpegutils-2.1-0 libdca0 libmp3lame0 libjbig0 || true
-
-    # 2b. Clean up old TensorRT engines to force rebuild on current hardware
-    echo "🧹 Removing old TensorRT engines..."
-    rm -f /workspace/deepstream/*.engine
-
-    # Restore the NVIDIA repo for GPU acceleration later
-    echo "📦 Restoring NVIDIA repositories..."
-    mv /etc/apt/sources.list.d.bak/*.list /etc/apt/sources.list.d/ 2>/dev/null || true
-
-    # 3. Clean up broken Numpy metadata
-    echo "🧹 Cleaning up metadata..."
-    rm -rf /usr/local/lib/python3.12/dist-packages/numpy-1.26.4.dist-info || true
-
-    # 4. Install Python requirements
-    echo "📦 Installing Python requirements..."
-    export PIP_TRUSTED_HOST="pypi.org pypi.python.org files.pythonhosted.org"
-    pip3 install --quiet \
-        --trusted-host pypi.org \
-        --trusted-host pypi.python.org \
-        --trusted-host files.pythonhosted.org \
-        --break-system-packages \
-        --ignore-installed \
-        -r /workspace/deepstream/requirements_ds.txt
-
-    # 5. Build pyds from source (Required for Python 3.12)
-    if python3 -c "import pyds" &> /dev/null; then
-        echo "✅ pyds is already installed."
-    else
-        echo "🔨 Building pyds from source for Python 3.12..."
-        git config --global http.sslVerify false
-        
-        cd /opt/nvidia/deepstream/deepstream/sources
-        
-        if [ ! -d "deepstream_python_apps" ]; then
-            git clone --depth 1 https://github.com/NVIDIA-AI-IOT/deepstream_python_apps.git
-        fi
-        
-        cd deepstream_python_apps
-        git submodule update --init --recursive --depth 1
-        
-        cd bindings
-        mkdir -p build && cd build
-        cmake .. -DPYTHON_MAJOR_VERSION=3 -DPYTHON_MINOR_VERSION=12
-        make -j$(nproc)
-        
-        # Install the .so file directly to dist-packages
-        echo "📦 Installing pyds.so globally..."
-        cp pyds*.so /usr/local/lib/python3.12/dist-packages/pyds.so
-        
-        echo "✅ pyds compiled and installed successfully."
+# 3. CHECK IF PYDS IS ACTUALLY WORKING
+# We try to activate and import. If it fails, we trigger a wipe and rebuild.
+PYDS_WORKS=0
+if [ -f "$VENV_PATH/bin/activate" ]; then
+    source "$VENV_PATH/bin/activate"
+    if python3 -c "import pyds" &>/dev/null; then
+        PYDS_WORKS=1
     fi
-    
-    # FINAL VERIFICATION: Ensure everything is really working before creating the flag
-    echo "🧪 Verifying core libraries (gi, pyds)..."
-    if python3 -c "import gi; import pyds" &> /dev/null; then
-        echo "✅ Verification passed."
-        touch "$SETUP_FLAG"
-    else
-        echo "❌ Verification failed. Dependencies are NOT correctly installed."
-        exit 1
-    fi
-else
-    echo "🚀 Dependencies verified. Skipping installation."
 fi
 
+if [ "$PYDS_WORKS" -eq 0 ]; then
+    echo "⚠️ pyds is missing or broken. Wiping and starting a clean build..."
+    cd "$DS_DIR"
+    rm -rf sources/deepstream_python_apps
+    
+    # Run official build script
+    # This script clones the repo and creates a venv at sources/deepstream_python_apps/pyds
+    echo "📡 Running official NVIDIA build script (this takes 2-5 minutes)..."
+    bash user_deepstream_python_apps_install.sh -b
+    
+    # Activate the newly created venv
+    source "$VENV_PATH/bin/activate"
+else
+    echo "✅ Existing pyds environment detected and working."
+    source "$VENV_PATH/bin/activate"
+fi
+
+# 4. INSTALL APP DEPENDENCIES (Into the active venv)
+echo "🔨 Installing application dependencies..."
+# We pin pydantic to 2.10.6 to satisfy both FastAPI and DeepStream Triton's internal libs
+pip3 install "numpy<2.0" "opencv-python-headless<4.10" "pydantic==2.10.6" \
+    fastapi uvicorn redis requests python-multipart --force-reinstall
+
+# 5. BUILD YOLO PARSER (The "No Boxes" Fix)
+CUSTOM_PARSER_DIR="/workspace/deepstream/nvdsinfer_custom_impl_Yolo"
+if [ ! -f "$CUSTOM_PARSER_DIR/libnvdsinfer_custom_impl_Yolo.so" ]; then
+    echo "🔨 Preparing YOLO Bounding Box Parser..."
+    rm -rf /tmp/ds_yolo
+    git clone https://github.com/marcoslucianops/DeepStream-Yolo /tmp/ds_yolo
+    mkdir -p "$CUSTOM_PARSER_DIR"
+    cp -r /tmp/ds_yolo/nvdsinfer_custom_impl_Yolo/* "$CUSTOM_PARSER_DIR/"
+    
+    cd "$CUSTOM_PARSER_DIR"
+    export CUDA_VER=12.6
+    make clean || true
+    make -j$(nproc)
+    echo "✅ YOLO Parser compiled."
+fi
+
+# 6. FINAL VERIFICATION
+echo "🔍 Verifying final environment..."
+python3 -c "import pyds; import cv2; import numpy; print(f'🚀 SUCCESS! Ready on NumPy {numpy.__version__}')"
+
+# 7. START APP
 echo "🚀 Starting DeepStream Bridge..."
 cd /workspace/deepstream
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$CUSTOM_PARSER_DIR
+chmod -R 777 /workspace/deepstream 2>/dev/null || true
+
+# Execution will now use the virtual environment's python
 exec python3 ds_app.py

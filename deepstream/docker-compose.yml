@@ -13,7 +13,7 @@ services:
     ipc: host
     ports:
       - "8010:8010"
-      - "8554:8554"
+      # REMOVED 8554 from here to avoid conflict with mediamtx
       - "8555:8555"
     privileged: true
     depends_on:
@@ -35,7 +35,6 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
-    # Launch the bridge application directly on startup
     command: bash /workspace/deepstream/start_ds.sh
     restart: unless-stopped
 
@@ -43,10 +42,11 @@ services:
     image: bluenviron/mediamtx:latest
     container_name: mediamtx_webrtc_bridge
     ports:
-      - "8889:8889"       # WebRTC API port
-      - "8189:8189/udp"   # WebRTC ICE UDP port
-      - "8189:8189/tcp"   # WebRTC ICE TCP port
+      - "8889:8889"       # WebRTC HTTP
+      - "8554:8554"       # RTSP Push
+      # Standard WebRTC UDP ports (MediaMTX uses these by default)
+      - "8000:8000/udp"
+      - "8001:8001/udp"
     volumes:
       - ./mediamtx.yml:/mediamtx.yml
     restart: unless-stopped
-

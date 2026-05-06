@@ -1,28 +1,16 @@
-###############################################
-# MediaMTX Configuration — Headcount AI
-###############################################
-
-# Logging
+# mediamtx.yml - Minimalist version
 logLevel: info
-logDestinations: [stdout]
 
-# Disable protocols we don't need
+# RTSP server (where DeepStream pushes the video)
 rtsp: yes
-rtmp: yes
-hls: no
-srt: no
-
-# RTSP server
 rtspAddress: :8554
 
-# WebRTC server (public — serves the frontend)
+# WebRTC server (where your browser gets the video)
 webrtc: yes
 webrtcAddress: :8889
+webrtcAllowOrigins: ["*"]
 
-# ICE candidates for WebRTC
-webrtcICEServers2: []
-
-# Paths — Push from DeepStream
+# Paths - Leave this empty or use 'all' with no sub-fields.
+# This allows any publisher to create any stream name.
 paths:
-  stream:
-    source: publisher
+  all:

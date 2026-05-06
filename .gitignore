@@ -1,29 +1,27 @@
-# SQLite runtime files
-*.db
-*.db-wal
-*.db-shm
-
-# Generated datasets
-backend/dataset/faces/
-
-# IDEs and Agents
-.agent/
-.vscode/
-.venv/
-.env
-
-test_videos/
-
-# Python & Node
+# Python
 __pycache__/
 *.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+
+# DeepStream / AI
+*.engine
+*.plan
+.setup_done
+deepstream/nvdsinfer_custom_impl_Yolo/
+deepstream/start_ds_linux.sh
+deepstream/start_ds_fixed.sh
+
+# Web App / Node
 node_modules/
 frontend/dist/
+.env
 
-# DeepStream & Models
-*.engine
-*.onnx
-*.onnx.data
-*.pt
-deepstream/.env
-deepstream/.setup_done
+# Docker / OS
+.DS_Store
+Thumbs.db
+*.log
+data/
+zones.json

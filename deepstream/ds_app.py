@@ -371,6 +371,7 @@ class DeepStreamBridge:
             while l_obj is not None:
                 try:
                     obj_meta = pyds.NvDsObjectMeta.cast(l_obj.data)
+                    print(f"🔍 DEBUG: Detected Class {obj_meta.class_id} with confidence {obj_meta.confidence}")
                     tracker_ids.append(int(obj_meta.object_id))
                     r = obj_meta.rect_params
                     xyxy_list.append([

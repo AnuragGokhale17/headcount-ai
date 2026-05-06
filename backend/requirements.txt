@@ -5,6 +5,8 @@ opencv-python-headless
 numpy
 requests
 supervision
-ultralytics
-pandas
+pygame
 python-dotenv
+ollama
+faster-whisper
+edge-tts

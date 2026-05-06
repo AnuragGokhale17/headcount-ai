@@ -5,17 +5,19 @@ interval=0
 net-scale-factor=0.0039215697906931
 model-color-format=0
 infer-dims=3;640;640
-maintain-aspect-ratio=0
+maintain-aspect-ratio=1
+network-type=0
 symmetric-padding=0
-onnx-file=yolo26l_raw.onnx
-model-engine-file=yolo26l_raw.onnx_b100_gpu0_fp32.engine
-custom-lib-path=/workspace/deepstream/DeepStream-Yolo/nvdsinfer_custom_impl_Yolo/libnvdsinfer_custom_impl_Yolo.so
-parse-bbox-func-name=NvDsInferParseYolo
+onnx-file=yolo26l.onnx
+model-engine-file=yolo26l.onnx_b100_gpu0_fp32.engine
+custom-lib-path=/workspace/deepstream/nvdsinfer_custom_impl_Yolo/libnvdsinfer_custom_impl_Yolo.so
 num-detected-classes=1
 labelfile-path=labels.txt
 gie-unique-id=1
-cluster-mode=4
+cluster-mode=2
+parse-bbox-func-name=NvDsInferParseYolo
+
 
 [class-attrs-all]
-pre-cluster-threshold=0.12
+pre-cluster-threshold=0.2
 nms-iou-threshold=0.45
