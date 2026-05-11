@@ -11,7 +11,9 @@ function SpatialHeatmap({ camera, onClose }) {
     const refreshData = async () => {
         try {
             const data = await fetchHeatmap(camera.id);
-            setGrid(data);
+            if (data && data.grid) {
+                setGrid(data.grid);
+            }
             setLoading(false);
             setError(null);
         } catch (err) {

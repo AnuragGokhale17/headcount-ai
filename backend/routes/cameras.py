@@ -220,6 +220,69 @@ def save_camera_zones(camera_id):
     return jsonify({"error": "Failed to save zones"}), 500
 
 
+@cameras_bp.route("/api/cameras/<int:camera_id>/homography", methods=["GET"])
+def get_camera_homography(camera_id):
+    """Get homography matrix for a camera."""
+    cam = _memory.get_camera(camera_id)
+    if not cam:
+        return jsonify({"error": "Camera not found"}), 404
+        
+    import json
+    matrix = json.loads(cam.get("homography_matrix") or "null")
+    return jsonify({"matrix": matrix})
+
+
+@cameras_bp.route("/api/cameras/<int:camera_id>/homography", methods=["POST"])
+def save_camera_homography(camera_id):
+    """Save homography matrix for a camera."""
+    data = request.get_json()
+    if not data or "matrix" not in data:
+        return jsonify({"error": "Invalid homography data"}), 400
+
+    cam = _memory.get_camera(camera_id)
+    if not cam:
+        return jsonify({"error": "Camera not found"}), 404
+
+    success = _memory.update_camera_homography(camera_id, data["matrix"])
+    
+    if success:
+        # Update live merger
+        _camera_manager.merger.update_camera_homography(camera_id, data["matrix"])
+        return jsonify({"success": True})
+    return jsonify({"error": "Failed to save homography"}), 500
+
+
+@cameras_bp.route("/api/cameras/<int:camera_id>/calibrate", methods=["POST"])
+def calibrate_camera(camera_id):
+    """Compute and save homography matrix from 4 pairs of points."""
+    import numpy as np
+    import cv2
+    
+    data = request.get_json()
+    if not data or "src_points" not in data or "dst_points" not in data:
+        return jsonify({"error": "Invalid calibration data"}), 400
+
+    src = np.array(data["src_points"], dtype=np.float32)
+    dst = np.array(data["dst_points"], dtype=np.float32)
+
+    if len(src) != 4 or len(dst) != 4:
+        return jsonify({"error": "Need exactly 4 source and 4 destination points"}), 400
+
+    # Compute homography matrix
+    matrix, _ = cv2.findHomography(src, dst)
+    
+    if matrix is not None:
+        # Convert to list for JSON storage
+        matrix_list = matrix.tolist()
+        success = _memory.update_camera_homography(camera_id, matrix_list)
+        if success:
+            # Update live merger
+            _camera_manager.merger.update_camera_homography(camera_id, matrix_list)
+            return jsonify({"success": True, "matrix": matrix_list})
+            
+    return jsonify({"error": "Calibration failed"}), 500
+
+
 # =========================================================================
 # AREA MONITORING
 # =========================================================================
@@ -280,7 +343,6 @@ def set_area_limit(area):
 
 @cameras_bp.route("/api/building_total", methods=["GET"])
 def building_total():
-    """Return the total people count aggregated across all active cameras."""
+    """Return the total people count aggregated across all active cameras with spatial deduplication."""
     stats = _camera_manager.get_all_stats()
-    total = sum(s.get("people_count", 0) for s in stats)
-    return jsonify({"total": total})
+    return jsonify({"total": stats.get("occupancy", 0)})

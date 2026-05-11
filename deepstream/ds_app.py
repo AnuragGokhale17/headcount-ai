@@ -248,10 +248,10 @@ class DeepStreamBridge:
         if tracker_src_pad:
             tracker_src_pad.add_probe(Gst.PadProbeType.BUFFER, self._tracker_probe, 0)
 
-        # --- Snapshot Probe (On OSD sink pad - RGBA format for Python) ---
-        osd_sink_pad = nvosd.get_static_pad("sink")
-        if osd_sink_pad:
-            osd_sink_pad.add_probe(Gst.PadProbeType.BUFFER, self._snapshot_probe, 0)
+        # --- Snapshot Probe (On TILER src pad - always RGBA) ---
+        tiler_src_pad = self.tiler.get_static_pad("src")
+        if tiler_src_pad:
+            tiler_src_pad.add_probe(Gst.PadProbeType.BUFFER, self._snapshot_probe, 0)
 
     def _setup_rtsp_server(self):
         """Deprecated: We now push directly to MediaMTX via rtspclientsink."""
@@ -401,12 +401,12 @@ class DeepStreamBridge:
                 r = i // cols
                 c = i % cols
                 
-                crop = full_bgr[r*h:(r+1)*h, c*w:(c+w)*w]
+                crop = full_bgr[r*h:(r+1)*h, c*w:(c+1)*w]
                 if crop.size > 0:
                     # Upscale crop back to logical 1080p resolution so zone coordinates match AI coordinates
                     crop_resized = cv2.resize(crop, (STREAMMUX_WIDTH, STREAMMUX_HEIGHT), interpolation=cv2.INTER_LINEAR)
                     _, buf = cv2.imencode('.jpg', crop_resized, [cv2.IMWRITE_JPEG_QUALITY, 85])
-                    self._redis_pub.set(f"ds_frame:{camera_id}", buf.tobytes())
+                    self._redis.set(f"ds_frame:{camera_id}", buf.tobytes())
                     
         except Exception as e:
             print(f"❌ Snapshot Error: {e}")

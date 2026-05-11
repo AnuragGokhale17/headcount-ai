@@ -16,6 +16,7 @@ import requests
 import config
 import redis
 import re
+from .spatial_merger import SpatialMerger
 
 # DeepStream Bridge API (runs inside Docker container on WSL2)
 # _raw_ds_api = os.environ.get("DS_API_BASE", "127.0.0.1:8010")
@@ -105,6 +106,11 @@ class CameraProcessor:
         self.latest_detections = None
         self.latest_labels = []
 
+    def get_encoded_frame(self):
+        """Return the latest JPEG bytes for snapshots."""
+        with self.frame_lock:
+            return self._encoded_frame
+
     def start(self):
         if self._thread and self._thread.is_alive():
             return
@@ -162,6 +168,21 @@ class CameraProcessor:
                 "is_connected": self.is_connected,
                 "last_error": self.last_error,
             }
+
+    def get_current_detections(self):
+        """Returns detections for spatial merging: list of {'x': x, 'y': y, 'id': tid}"""
+        with self._cap_lock:
+            if self.latest_detections is None or self.latest_detections.xyxy is None:
+                return []
+            
+            dets = []
+            for i, box in enumerate(self.latest_detections.xyxy):
+                tid = int(self.latest_detections.tracker_id[i]) if self.latest_detections.tracker_id is not None else 0
+                # Use bottom-center (feet) for homography
+                x_c = (box[0] + box[2]) / 2
+                y_c = box[3]
+                dets.append({'camera_id': self.camera_id, 'x': x_c, 'y': y_c, 'id': tid})
+            return dets
 
     def _process_loop(self):
         """
@@ -374,6 +395,7 @@ class CameraManager:
         self.memory = memory
         self.ai_engine = ai_engine
         self._processors = {}  # camera_id -> CameraProcessor
+        self.merger = SpatialMerger()
         self._lock = threading.Lock()
 
         # Redis connection for reading DeepStream-published frames
@@ -394,6 +416,11 @@ class CameraManager:
     def load_and_start_all(self):
         cameras = self.memory.get_cameras(active_only=True)
         for cam in cameras:
+            # Update merger with existing homography
+            if cam.get("homography_matrix"):
+                try:
+                    self.merger.update_camera_homography(cam["id"], json.loads(cam["homography_matrix"]))
+                except: pass
             self.start_camera(cam["id"], cam["name"], cam["url"], cam["area"], cam.get("plant", "Plant 1"))
         print(f"  📡 CameraManager: {len(cameras)} camera(s) loaded and started")
 
@@ -519,6 +546,18 @@ class CameraManager:
         if active_count > 0:
             avg_fps = int(avg_fps / active_count)
             
+        # --- NEW SPATIAL DEDUPLICATION ---
+        all_dets = []
+        with self._lock:
+            for proc in self._processors.values():
+                all_dets.extend(proc.get_current_detections())
+        
+        # If no homography matrices are set, fallback to simple sum
+        if not self.merger.cameras_homography:
+            total_occupancy = total_occupancy
+        else:
+            total_occupancy = self.merger.get_unique_count(all_dets)
+
         return {
             "in": total_in,
             "out": total_out,
@@ -550,36 +589,89 @@ class CameraManager:
                     plant_counts[plant]["connected"] += 1
         return dict(plant_counts)
 
-    def get_camera_frame(self, camera_id):
-        """Read the latest annotated JPEG frame from Redis (set by DeepStream).
-        Falls back to the processor's internal buffer if Redis is unavailable."""
+    def _get_redis_client(self):
+        """Lazy-initialize a reliable Redis client."""
+        if hasattr(self, '_redis') and self._redis:
+            return self._redis
         
-        # 1. Lazy-initialize Redis if it failed at startup
-        if self._redis is None:
-            try:
-                raw_host = os.environ.get("REDIS_HOST", "127.0.0.1")
-                redis_host = raw_host.replace(":", "").split()[0]
+        try:
+            raw_host = os.environ.get("REDIS_HOST", "redis")
+            # Robustly split host and port
+            if ":" in raw_host:
+                parts = raw_host.split(":")
+                redis_host = parts[0].strip()
+                redis_port = int(parts[1].strip())
+            else:
+                redis_host = raw_host.strip()
                 redis_port = int(os.environ.get("REDIS_PORT", "6379"))
-                self._redis = redis.Redis(host=redis_host, port=redis_port, socket_connect_timeout=1, decode_responses=False)
-                self._redis.ping()
-                print(f"  ✅ CameraManager: Redis connection restored to {redis_host}")
-            except Exception:
-                self._redis = None # Stay None until next try
+
+            self._redis = redis.Redis(
+                host=redis_host, 
+                port=redis_port, 
+                socket_connect_timeout=2, 
+                decode_responses=False
+            )
+            self._redis.ping()
+            return self._redis
+        except Exception as e:
+            print(f"  ⚠️ CameraManager: Redis link failed ({redis_host}:{redis_port}): {e}")
+            self._redis = None
+            return None
+
+    def get_camera_frame(self, camera_id):
+        """Read the latest annotated JPEG frame with triple-redundancy."""
+        r = self._get_redis_client()
         
-        # 2. Try Redis (DeepStream-annotated frame)
-        if self._redis:
+        # --- 1. TRY REDIS (DeepStream Output) ---
+        if r:
             try:
-                frame_data = self._redis.get(f"ds_frame:{camera_id}")
+                frame_data = r.get(f"ds_frame:{camera_id}")
                 if frame_data:
                     return frame_data
+                
+                # Fuzzy match for index shifts
+                keys = r.keys("ds_frame:*")
+                if keys:
+                    return r.get(keys[0])
             except Exception:
                 pass
 
-        # 3. Fallback: Try grabbing a direct frame from the camera URL (Safe Snapshot)
+        # --- 2. TRY INTERNAL PROCESSOR BUFFER (Live Frame) ---
+        # This is the fastest fallback and highly reliable
+        proc = None
         with self._lock:
             proc = self._processors.get(camera_id)
-            if proc:
-                return proc.get_encoded_frame()
+        
+        if proc:
+            with proc.frame_lock:
+                if proc._encoded_frame:
+                    return proc._encoded_frame
+
+        # --- 3. TRY DIRECT RTSP (OpenCV) ---
+        # Only if the first two failed and we have a URL
+        if proc and proc.url:
+            now = time.time()
+            if not hasattr(self, '_fallback_cache'): self._fallback_cache = {}
+            
+            cached_time, cached_frame = self._fallback_cache.get(camera_id, (0, None))
+            if now - cached_time < 3.0: # 3 second cache
+                return cached_frame
+
+            try:
+                # Use a non-blocking subprocess or very short timeout
+                cap = cv2.VideoCapture(proc.url)
+                cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 1500)
+                if cap.isOpened():
+                    ret, frame = cap.read()
+                    cap.release()
+                    if ret:
+                        _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                        frame_bytes = buffer.tobytes()
+                        self._fallback_cache[camera_id] = (now, frame_bytes)
+                        return frame_bytes
+            except Exception as e:
+                print(f"  ⚠️ CameraManager: Direct grab fallback failed for {camera_id}: {e}")
+
         return None
 
     def get_camera_heatmap(self, camera_id):
@@ -588,23 +680,6 @@ class CameraManager:
             proc = self._processors.get(camera_id)
             if proc:
                 return proc.heatmap.tolist()
-        return None
-        if proc and hasattr(proc, 'url'):
-            try:
-                cap = cv2.VideoCapture(proc.url)
-                ret, frame = cap.read()
-                cap.release()
-                if ret:
-                    _, buf = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
-                    return buf.tobytes()
-            except Exception:
-                pass
-
-        # 4. Final Fallback: processor's internal buffer
-        if proc:
-            with proc.frame_lock:
-                if getattr(proc, '_encoded_frame', None) is not None:
-                    return proc._encoded_frame
         return None
 
     def get_processor(self, camera_id):

@@ -70,7 +70,8 @@ class MemoryStore:
                 created_at TEXT NOT NULL,
                 zone_a TEXT,
                 zone_b TEXT,
-                people_limit INTEGER DEFAULT 0
+                people_limit INTEGER DEFAULT 0,
+                homography_matrix TEXT
             );
         """)
         
@@ -88,6 +89,11 @@ class MemoryStore:
 
         try:
             conn.execute("ALTER TABLE cameras ADD COLUMN plant TEXT NOT NULL DEFAULT 'Plant 1'")
+        except sqlite3.OperationalError:
+            pass # Column already exists
+
+        try:
+            conn.execute("ALTER TABLE cameras ADD COLUMN homography_matrix TEXT")
         except sqlite3.OperationalError:
             pass # Column already exists
 
@@ -223,7 +229,7 @@ class MemoryStore:
     def get_cameras(self, active_only=True):
         """Return all cameras as a list of dicts."""
         conn = self._get_conn()
-        query = "SELECT id, name, url, area, plant, is_active, created_at, zone_a, zone_b, people_limit FROM cameras"
+        query = "SELECT id, name, url, area, plant, is_active, created_at, zone_a, zone_b, people_limit, homography_matrix FROM cameras"
         if active_only:
             query += " WHERE is_active = 1"
         rows = conn.execute(query).fetchall()
@@ -233,7 +239,7 @@ class MemoryStore:
         """Return a single camera by ID."""
         conn = self._get_conn()
         row = conn.execute(
-            "SELECT id, name, url, area, plant, is_active, created_at, zone_a, zone_b, people_limit FROM cameras WHERE id = ?",
+            "SELECT id, name, url, area, plant, is_active, created_at, zone_a, zone_b, people_limit, homography_matrix FROM cameras WHERE id = ?",
             (camera_id,)
         ).fetchone()
         return dict(row) if row else None
@@ -268,6 +274,16 @@ class MemoryStore:
         conn.execute(
             "UPDATE cameras SET zone_a = ?, zone_b = ? WHERE id = ?",
             (json.dumps(zone_a_list), json.dumps(zone_b_list), camera_id)
+        )
+        conn.commit()
+        return True
+
+    def update_camera_homography(self, camera_id, matrix):
+        """Update the homography matrix for a specific camera."""
+        conn = self._get_conn()
+        conn.execute(
+            "UPDATE cameras SET homography_matrix = ? WHERE id = ?",
+            (json.dumps(matrix), camera_id)
         )
         conn.commit()
         return True

@@ -186,3 +186,28 @@ export async function updateAlertConfig(config) {
     });
     return res.json();
 }
+
+// --- Homography & Calibration ---
+
+export async function fetchCameraHomography(cameraId) {
+    const res = await fetch(`${API_BASE}/api/cameras/${cameraId}/homography`);
+    return res.json();
+}
+
+export async function saveCameraHomography(cameraId, matrix) {
+    const res = await fetch(`${API_BASE}/api/cameras/${cameraId}/homography`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ matrix })
+    });
+    return res.json();
+}
+
+export async function calibrateCamera(cameraId, srcPoints, dstPoints) {
+    const res = await fetch(`${API_BASE}/api/cameras/${cameraId}/calibrate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ src_points: srcPoints, dst_points: dstPoints })
+    });
+    return res.json();
+}
