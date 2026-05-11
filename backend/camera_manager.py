@@ -70,6 +70,7 @@ class CameraProcessor:
             "in": 0,
             "out": 0,
             "occupancy": 0,
+            "total_detected": 0,
             "fps": 0,
         }
         # Spatial Heatmap Grid (32x18 resolution for 16:9 streams)
@@ -153,6 +154,7 @@ class CameraProcessor:
                 "area": self.area,
                 "plant": self.plant,
                 "people_count": self.stats["occupancy"],
+                "total_detected": self.stats.get("total_detected", 0),
                 "in": self.people_in_count,
                 "out": self.people_out_count,
                 "fps": self.stats["fps"],
@@ -215,9 +217,8 @@ class CameraProcessor:
                 # Expected payload: {"tracker_ids": [], "xyxy": [], "conf": [], "fps": 24}
                 
                 if not payload.get('tracker_ids'):
-                    # Handle empty frames to maintain ghost cleanup
-                    curr_time = time.time()
                     detections = sv.Detections.empty()
+                    self.stats['total_detected'] = 0
                 else:
                     # Map DeepStream data to Supervision format
                     detections = sv.Detections(
@@ -226,6 +227,7 @@ class CameraProcessor:
                         class_id=np.array([0] * len(payload['tracker_ids'])),
                         tracker_id=np.array(payload['tracker_ids'])
                     )
+                    self.stats['total_detected'] = len(payload['tracker_ids'])
             except Exception as e:
                 print(f"  ⚠️ [{self.name}] Data parse error: {e}")
                 continue
@@ -248,8 +250,8 @@ class CameraProcessor:
                 self.zone_a_poly = np.array(za_raw, dtype=np.int32)
                 self.zone_b_poly = np.array(zb_raw, dtype=np.int32)
                 
-                zone_a = sv.PolygonZone(polygon=self.zone_a_poly, triggering_anchors=[sv.Position.BOTTOM_CENTER])
-                zone_b = sv.PolygonZone(polygon=self.zone_b_poly, triggering_anchors=[sv.Position.BOTTOM_CENTER])
+                zone_a = sv.PolygonZone(polygon=self.zone_a_poly, triggering_anchors=[sv.Position.CENTER])
+                zone_b = sv.PolygonZone(polygon=self.zone_b_poly, triggering_anchors=[sv.Position.CENTER])
 
             # C. Update Tracking Timestamps (Your Original Logic)
             if detections.tracker_id is not None:

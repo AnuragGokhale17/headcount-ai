@@ -5,7 +5,7 @@ NvMultiObjectTracker:
   enableBatchProcess: 1
   
   # Tracker-wide settings
-  minDetectorConfidence: 0.12
+  minDetectorConfidence: 0.20
   probationAge: 2
   maxShadowTrackingAge: 90
   earlyTerminationAge: 1

@@ -39,6 +39,7 @@ def list_cameras():
     for cam in cameras:
         stats = live_stats.get(cam["id"], {})
         cam["people_count"] = stats.get("people_count", 0)
+        cam["total_detected"] = stats.get("total_detected", 0)
         cam["fps"] = stats.get("fps", 0)
         cam["is_running"] = stats.get("is_running", False)
         cam["is_connected"] = stats.get("is_connected", False)

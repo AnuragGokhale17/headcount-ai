@@ -28,18 +28,23 @@ import logging
 # DeepStream Python bindings
 sys.path.append("/opt/nvidia/deepstream/deepstream/lib")
 
+# pyrefly: ignore [missing-import]
 import gi
 gi.require_version("Gst", "1.0")
 gi.require_version("GstRtspServer", "1.0")
+# pyrefly: ignore [missing-import]
 from gi.repository import Gst, GstRtspServer, GLib
 
+# pyrefly: ignore [missing-import]
 import pyds
 import numpy as np
 import cv2
 import redis
 
+# pyrefly: ignore [missing-import]
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+# pyrefly: ignore [missing-import]
 import uvicorn
 
 from ds_config import (
@@ -117,13 +122,24 @@ class DeepStreamBridge:
         self._source_id_pool: list[int] = list(range(MAX_SOURCES))
         self._lock = threading.Lock()
 
-        # Redis clients (one binary for frames, one text for pub/sub)
-        self._redis = redis.Redis(
-            host=REDIS_HOST, port=REDIS_PORT, decode_responses=False
-        )
-        self._redis_pub = redis.Redis(
-            host=REDIS_HOST, port=REDIS_PORT, decode_responses=True
-        )
+        # Redis clients with retry logic for container networking
+        self._redis = None
+        self._redis_pub = None
+        
+        log.info("  📡 Connecting to Redis at %s:%d...", REDIS_HOST, REDIS_PORT)
+        for attempt in range(5):
+            try:
+                self._redis = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=False)
+                self._redis_pub = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+                self._redis.ping()
+                log.info("  ✅ Connected to Redis")
+                break
+            except Exception as e:
+                log.warning("  ⏳ Redis connect attempt %d failed: %s", attempt + 1, e)
+                time.sleep(2)
+        
+        if not self._redis:
+            log.error("  ❌ Could not connect to Redis after 5 attempts. Resolution failed.")
 
         # source_id → camera_id reverse map
         self._sid_to_camid: dict[int, int] = {}
@@ -146,7 +162,8 @@ class DeepStreamBridge:
         self.streammux.set_property("batched-push-timeout", STREAMMUX_BATCHED_PUSH_TIMEOUT)
         self.streammux.set_property("live-source", 1)
         self.streammux.set_property("sync-inputs", 0) # CRITICAL: 0 prevents pipeline starvation from unsynchronized camera clocks
-        self.streammux.set_property("enable-padding", 0) # Use direct scaling for perfect coordinate alignment
+        self.streammux.set_property("enable-padding", 1) # Match AI aspect ratio expectations
+        self.streammux.set_property("interpolation-method", 1) # Bilinear for low latency
 
         pgie = self._make_elem("nvinfer", "primary-gie")
         pgie.set_property("config-file-path", INFER_CONFIG)
@@ -165,11 +182,13 @@ class DeepStreamBridge:
         self.tiler = self._make_elem("nvmultistreamtiler", "tiler")
         self.tiler.set_property("width", STREAMMUX_WIDTH)
         self.tiler.set_property("height", STREAMMUX_HEIGHT)
+        self.tiler.set_property("interpolation-method", 1) # Bilinear
         self._update_tiler()
 
         nvvidconv = self._make_elem("nvvideoconvert", "convertor")
+        nvvidconv.set_property("interpolation-method", 1) # Bilinear
         nvosd = self._make_elem("nvdsosd", "onscreendisplay")
-        nvosd.set_property("process-mode", 0)  # CPU mode (more stable than GPU mode in some containers)
+        nvosd.set_property("process-mode", 1)  # GPU mode for sharper rendering
 
         nvvidconv2 = self._make_elem("nvvideoconvert", "convertor2")
 
@@ -180,11 +199,11 @@ class DeepStreamBridge:
         )
 
         encoder = self._make_elem("nvv4l2h264enc", "encoder")
-        encoder.set_property("bitrate", 12000000)      # Increased to 12 Mbps for 1080p
-        encoder.set_property("preset-id", 7)
-        encoder.set_property("profile", 0)  # Baseline
+        encoder.set_property("bitrate", 4000000)       # Optimized 4 Mbps for monitoring
+        encoder.set_property("preset-id", 4)           # UltraFast Preset for low latency
+        encoder.set_property("profile", 2)             # Main Profile
         encoder.set_property("insert-sps-pps", True)
-        encoder.set_property("idrinterval", 15) 
+        encoder.set_property("idrinterval", 30) 
         
         # Direct Push Bridge -> MediaMTX
         # Modern rtspclientsink automatically handles RTP payloading internally.
@@ -220,9 +239,19 @@ class DeepStreamBridge:
         assert queue.link(encoder), "queue → encoder link failed"
         assert encoder.link(push_bin), "encoder → push_bin link failed"
 
-        # --- Probe on tiler sink pad to extract per-source metadata ---
-        tiler_sink_pad = self.tiler.get_static_pad("sink")
-        tiler_sink_pad.add_probe(Gst.PadProbeType.BUFFER, self._buffer_probe, 0)
+        # --- Probe on PGIE (AI Engine) src pad to extract metadata BEFORE tracker ---
+        pgie_src_pad = pgie.get_static_pad("src")
+        pgie_src_pad.add_probe(Gst.PadProbeType.BUFFER, self._buffer_probe, 0)
+
+        # --- Metadata Probe (On Tracker src pad - sources are separate here) ---
+        tracker_src_pad = tracker.get_static_pad("src")
+        if tracker_src_pad:
+            tracker_src_pad.add_probe(Gst.PadProbeType.BUFFER, self._tracker_probe, 0)
+
+        # --- Snapshot Probe (On OSD sink pad - RGBA format for Python) ---
+        osd_sink_pad = nvosd.get_static_pad("sink")
+        if osd_sink_pad:
+            osd_sink_pad.add_probe(Gst.PadProbeType.BUFFER, self._snapshot_probe, 0)
 
     def _setup_rtsp_server(self):
         """Deprecated: We now push directly to MediaMTX via rtspclientsink."""
@@ -242,185 +271,82 @@ class DeepStreamBridge:
         return elem
 
     # ------------------------------------------------------------------
-    # Probe callback — metadata + frame extraction
+    # Probe callbacks — metadata extraction
     # ------------------------------------------------------------------
-    # def _buffer_probe(self, pad, info, _user_data):
-    #     """
-    #     Runs on every batch buffer produced by the pipeline.
-    #     Extracts per-source detection metadata → Redis PUB
-    #     Captures annotated frames (throttled) → Redis SET
-    #     """
-    #     gst_buffer = info.get_buffer()
-    #     if not gst_buffer:
-    #         return Gst.PadProbeReturn.OK
-
-    #     batch_meta = pyds.gst_buffer_get_nvds_batch_meta(hash(gst_buffer))
-    #     l_frame = batch_meta.frame_meta_list
-
-    #     while l_frame is not None:
-    #         try:
-    #             frame_meta = pyds.NvDsFrameMeta.cast(l_frame.data)
-    #         except StopIteration:
-    #             break
-
-    #         source_id = frame_meta.source_id
-    #         camera_id = self._sid_to_camid.get(source_id)
-    #         if camera_id is None:
-    #             try:
-    #                 l_frame = l_frame.next
-    #             except StopIteration:
-    #                 break
-    #             continue
-
-    #         # --- Extract detection metadata ---
-    #         tracker_ids = []
-    #         xyxy_list = []
-    #         conf_list = []
-
-    #         l_obj = frame_meta.obj_meta_list
-    #         while l_obj is not None:
-    #             try:
-    #                 obj_meta = pyds.NvDsObjectMeta.cast(l_obj.data)
-    #                 tracker_ids.append(int(obj_meta.object_id))
-    #                 r = obj_meta.rect_params
-    #                 xyxy_list.append([
-    #                     float(r.left),
-    #                     float(r.top),
-    #                     float(r.left + r.width),
-    #                     float(r.top + r.height),
-    #                 ])
-    #                 conf_list.append(float(obj_meta.confidence))
-    #                 l_obj = l_obj.next
-    #             except StopIteration:
-    #                 break
-
-    #         # --- FPS calculation ---
-    #         fps = 0
-    #         for si in self.sources.values():
-    #             if si.source_id == source_id:
-    #                 si.frame_count += 1
-    #                 now = time.time()
-    #                 elapsed = now - si.last_fps_time
-    #                 if elapsed >= 1.0:
-    #                     si.fps = int(si.frame_count / elapsed)
-    #                     si.frame_count = 0
-    #                     si.last_fps_time = now
-    #                 fps = si.fps
-    #                 break
-
-    #         # --- Publish detection data to Redis ---
-    #         payload = json.dumps({
-    #             "tracker_ids": tracker_ids,
-    #             "xyxy": xyxy_list,
-    #             "conf": conf_list,
-    #             "fps": fps,
-    #             "camera_id": camera_id,
-    #             "timestamp": time.time(),
-    #         })
-    #         try:
-    #             self._redis_pub.publish(f"ds_data_{camera_id}", payload)
-    #         except Exception as exc:
-    #             log.warning("Redis publish error: %s", exc)
-
-    #         # --- Capture frame (throttled) ---
-    #         cnt = self._frame_counters.get(source_id, 0)
-    #         self._frame_counters[source_id] = cnt + 1
-
-    #         if cnt % FRAME_PUBLISH_INTERVAL == 0:
-    #             try:
-    #                 n_frame = pyds.get_nvds_buf_surface(
-    #                     hash(gst_buffer), frame_meta.batch_id
-    #                 )
-    #                 frame_arr = np.array(n_frame, copy=True, order="C")
-    #                 frame_bgr = cv2.cvtColor(frame_arr, cv2.COLOR_RGBA2BGR)
-    #                 _, jpeg_buf = cv2.imencode(
-    #                     ".jpg", frame_bgr,
     def _buffer_probe(self, pad, info, _user_data):
-        # Throttled logging to confirm frame flow (once every 30 frames)
-        if not hasattr(self, "_frame_count"): self._frame_count = 0
-        self._frame_count += 1
-        if self._frame_count % 30 == 0:
-            log.info("  🎞️  Pipeline Active: Processed %d batches of frames", self._frame_count)
+        """
+        Runs on every batch buffer produced by the PGIE (AI).
+        Parses raw tensors and INJECTS metadata for the tracker.
+        """
+        gst_buffer = info.get_buffer()
+        if not gst_buffer: return Gst.PadProbeReturn.OK
 
-        batch_meta = pyds.gst_buffer_get_nvds_batch_meta(hash(info.get_buffer()))
-        if not batch_meta:
-            return Gst.PadProbeReturn.OK
-
+        batch_meta = pyds.gst_buffer_get_nvds_batch_meta(hash(gst_buffer))
         l_frame = batch_meta.frame_meta_list
         while l_frame is not None:
-            try:
-                frame_meta = pyds.NvDsFrameMeta.cast(l_frame.data)
-            except StopIteration:
-                break
-
+            frame_meta = pyds.NvDsFrameMeta.cast(l_frame.data)
             source_id = frame_meta.source_id
-            camera_id = self._sid_to_camid.get(source_id)
-            if camera_id is None:
-                try:
-                    l_frame = l_frame.next
-                except StopIteration:
-                    break
-                continue
+            camera_id = self._sid_to_camid.get(source_id, source_id)
+            # --- Heartbeat Monitor ---
+            # We no longer need to parse tensors in Python! 
+            # The C++ Custom Parser (libnvdsinfer_custom_impl_Yolo.so) handles it all.
+            if frame_meta.frame_num % 100 == 0:
+                l_obj = frame_meta.obj_meta_list
+                obj_count = 0
+                while l_obj is not None:
+                    obj_count += 1
+                    l_obj = l_obj.next
+                log.info("🎞️  Pipeline Heartbeat [Cam %d]: %d objects detected via C++ Parser", camera_id, obj_count)
 
-            # --- Extract detection metadata ---
+            l_frame = l_frame.next
+        return Gst.PadProbeReturn.OK
+
+    def _tracker_probe(self, pad, info, _user_data):
+        """
+        Runs AFTER the tracker. Grabs the final Tracking IDs and sends to Redis.
+        """
+        gst_buffer = info.get_buffer()
+        if not gst_buffer: return Gst.PadProbeReturn.OK
+
+        batch_meta = pyds.gst_buffer_get_nvds_batch_meta(hash(gst_buffer))
+        l_frame = batch_meta.frame_meta_list
+        while l_frame is not None:
+            frame_meta = pyds.NvDsFrameMeta.cast(l_frame.data)
+            frame_num = frame_meta.frame_num
+            source_id = frame_meta.source_id
+            camera_id = self._sid_to_camid.get(source_id, source_id)
+            
             tracker_ids = []
             xyxy_list = []
             conf_list = []
 
             l_obj = frame_meta.obj_meta_list
             while l_obj is not None:
-                try:
-                    obj_meta = pyds.NvDsObjectMeta.cast(l_obj.data)
-                    print(f"🔍 DEBUG: Detected Class {obj_meta.class_id} with confidence {obj_meta.confidence}")
-                    tracker_ids.append(int(obj_meta.object_id))
+                obj_meta = pyds.NvDsObjectMeta.cast(l_obj.data)
+                
+                # Report tracked people (Class 0)
+                if obj_meta.class_id == 0:
                     r = obj_meta.rect_params
-                    xyxy_list.append([
-                        float(r.left),
-                        float(r.top),
-                        float(r.left + r.width),
-                        float(r.top + r.height),
-                    ])
+                    # Official NvDCF Tracking ID!
+                    tracker_ids.append(int(obj_meta.object_id))
+                    xyxy_list.append([float(r.left), float(r.top), float(r.left+r.width), float(r.top+r.height)])
                     conf_list.append(float(obj_meta.confidence))
-                    
-                    # --- Aesthetic White Styling ---
-                    r.border_width = 2
-                    r.border_color.red = 1.0
-                    r.border_color.green = 1.0
-                    r.border_color.blue = 1.0
-                    r.border_color.alpha = 0.6
-                    r.has_bg_color = 0 
-                    
-                    txt = obj_meta.text_params
-                    txt.display_text = f"ID:{obj_meta.object_id}"
-                    txt.font_params.font_size = 9
-                    txt.set_bg_clr = 1
-                    txt.text_bg_clr.red = 0.0
-                    txt.text_bg_clr.green = 0.0
-                    txt.text_bg_clr.blue = 0.0
-                    txt.text_bg_clr.alpha = 0.4
+                
+                l_obj = l_obj.next
 
-                    l_obj = l_obj.next
-                except StopIteration:
-                    break
-
-            # NOTE: Frame capture via get_nvds_buf_surface is disabled.
-            # It causes a C-level segfault on NV12 buffers (uncatchable by try/except).
-            # Detection metadata (boxes, IDs) is published via Redis for UI rendering.
-
-            # --- Publish detection data to Redis ---
+            # --- Publish to Redis (The Tracker has now assigned persistent IDs!) ---
             si = self.sources.get(camera_id)
             if si:
                 si.frame_count += 1
                 
-                # --- Temporal Count Smoothing ---
+                # Update stable headcount
                 si.count_history.append(len(tracker_ids))
-                if len(si.count_history) > 20: # 20 frames window
+                if len(si.count_history) > 20:
                     si.count_history.pop(0)
-                
-                # Statistical Mode (most frequent count in window)
                 if si.count_history:
                     si.stable_count = max(set(si.count_history), key=si.count_history.count)
 
+                # Calculate FPS
                 now = time.time()
                 elapsed = now - si.last_fps_time
                 if elapsed >= 1.0:
@@ -432,21 +358,59 @@ class DeepStreamBridge:
                     "tracker_ids": tracker_ids,
                     "xyxy": xyxy_list,
                     "conf": conf_list,
-                    "count": si.stable_count, # Exact, smoothed count
+                    "count": si.stable_count,
                     "fps": si.fps,
                     "camera_id": camera_id,
-                    "timestamp": time.time(),
+                    "timestamp": now,
                 })
                 try:
                     self._redis_pub.publish(f"ds_data_{camera_id}", payload)
-                except Exception as exc:
-                    log.warning("Redis publish error: %s", exc)
+                except Exception as e:
+                    print(f"❌ Redis Error: {e}")
 
-            try:
-                l_frame = l_frame.next
-            except StopIteration:
-                break
+            l_frame = l_frame.next
+        return Gst.PadProbeReturn.OK
 
+    def _snapshot_probe(self, pad, info, _user_data):
+        """Extracts snapshots for all sources by cropping the tiled RGBA frame."""
+        gst_buffer = info.get_buffer()
+        if not gst_buffer: return Gst.PadProbeReturn.OK
+        
+        # Only snapshot every 30 frames to save CPU
+        # We use a global counter since we are after the tiler (batch_size=1)
+        if not hasattr(self, '_snap_counter'): self._snap_counter = 0
+        self._snap_counter += 1
+        if self._snap_counter % 30 != 0: return Gst.PadProbeReturn.OK
+
+        try:
+            # 1. Get the big tiled frame (RGBA)
+            n_frame = pyds.get_nvds_buf_surface(hash(gst_buffer), 0)
+            frame_copy = np.array(n_frame, copy=True, order='C')
+            full_bgr = cv2.cvtColor(frame_copy, cv2.COLOR_RGBA2BGR)
+            
+            # 2. Determine grid layout (e.g. 2x2 for 3-4 sources)
+            count = len(self.sources)
+            cols = int(np.ceil(np.sqrt(count)))
+            rows = int(np.ceil(count / cols))
+            
+            w = STREAMMUX_WIDTH // cols
+            h = STREAMMUX_HEIGHT // rows
+            
+            # 3. Crop and save for each active camera
+            for i, camera_id in enumerate(sorted(self.sources.keys())):
+                r = i // cols
+                c = i % cols
+                
+                crop = full_bgr[r*h:(r+1)*h, c*w:(c+w)*w]
+                if crop.size > 0:
+                    # Upscale crop back to logical 1080p resolution so zone coordinates match AI coordinates
+                    crop_resized = cv2.resize(crop, (STREAMMUX_WIDTH, STREAMMUX_HEIGHT), interpolation=cv2.INTER_LINEAR)
+                    _, buf = cv2.imencode('.jpg', crop_resized, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                    self._redis_pub.set(f"ds_frame:{camera_id}", buf.tobytes())
+                    
+        except Exception as e:
+            print(f"❌ Snapshot Error: {e}")
+            
         return Gst.PadProbeReturn.OK
 
     def _update_tiler(self):
@@ -667,7 +631,7 @@ class DeepStreamBridge:
         # 1. First link downstream to streammux BEFORE connecting upstream
         # This ensures STREAM_START and SEGMENT events reach the streammux
         camera_id = self._sid_to_camid.get(source_id)
-        if camera_id and camera_id in self.sources:
+        if camera_id is not None and camera_id in self.sources:
             sinkpad = self.sources[camera_id].sinkpad
             ghost_pad = source_bin.get_static_pad("src")
             if ghost_pad and not ghost_pad.is_linked():
