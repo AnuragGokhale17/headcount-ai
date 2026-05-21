@@ -25,10 +25,10 @@ SAFETY_LIMIT = 5
 # ==============================================================================
 # --- DETECTION ---
 # ==============================================================================
-CONFIDENCE_THRESHOLD = 0.20  # Lowered to match DeepStream sensitivity and ensure all visible people are counted
+CONFIDENCE_THRESHOLD = 0.15  # Lowered to capture distant/partially obscured people
 IOU_THRESHOLD = 0.45
 ENTRY_DEBOUNCE_SEC = 0.5
-ENTRY_MIN_CONFIDENCE = 0.60  # Require decent confidence to log an entry
+ENTRY_MIN_CONFIDENCE = 0.45  # More sensitive counting logic
 GHOST_TIMEOUT_SEC = 5        # Maintain count stability during brief tracker drops
 
 # ==============================================================================

@@ -137,7 +137,7 @@
 /* ADD FORM */
 .cm-form {
     background: var(--grad-surface);
-    border: 1px solid rgba(79, 70, 229, 0.1);
+    border: 1px solid rgba(236, 30, 47, 0.1);
     border-radius: 20px;
     padding: 32px;
     margin-bottom: 40px;
@@ -172,7 +172,7 @@
 
 .cm-form-row input:focus {
     border-color: var(--primary);
-    box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.1);
+    box-shadow: 0 0 0 4px rgba(236, 30, 47, 0.1);
 }
 
 .cm-submit-btn {
@@ -191,7 +191,7 @@
 
 .cm-submit-btn:hover:not(:disabled) {
     transform: translateY(-2px);
-    box-shadow: 0 8px 25px rgba(79, 70, 229, 0.4);
+    box-shadow: 0 8px 25px rgba(236, 30, 47, 0.4);
 }
 
 /* CAMERA LIST */
@@ -262,7 +262,7 @@
     font-size: 0.9rem;
 }
 
-.cm-view-btn:hover { background: #e0e7ff; color: var(--primary); border-color: var(--primary-light); }
+.cm-view-btn:hover { background: #fee2e2; color: var(--primary); border-color: var(--primary-light); }
 .cm-fire-btn:hover { background: #fff7ed; color: #f59e0b; border-color: #fed7aa; }
 .cm-del-btn:hover { background: #fee2e2; color: #ef4444; border-color: #fecaca; }
 
@@ -419,7 +419,7 @@
 }
 
 .cm-limit-save:hover:not(:disabled) {
-    background: #4f46e5;
+    background: #EC1E2F;
     transform: translateY(-1px);
 }
 

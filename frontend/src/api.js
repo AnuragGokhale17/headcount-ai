@@ -88,6 +88,13 @@ export async function deleteCamera(cameraId) {
     return res.json();
 }
 
+export async function restartCamera(cameraId) {
+    const res = await fetch(`${API_BASE}/api/cameras/${cameraId}/restart`, {
+        method: 'POST'
+    });
+    return res.json();
+}
+
 export async function updateCamera(cameraId, data) {
     const res = await fetch(`${API_BASE}/api/cameras/${cameraId}`, {
         method: 'PUT',
@@ -211,3 +218,14 @@ export async function calibrateCamera(cameraId, srcPoints, dstPoints) {
     });
     return res.json();
 }
+
+export async function importAmcCalibration(cameraId, file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch(`${API_BASE}/api/cameras/${cameraId}/import_amc`, {
+        method: 'POST',
+        body: formData
+    });
+    return res.json();
+}
+

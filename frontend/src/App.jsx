@@ -6,7 +6,7 @@ import CameraFeed from './components/CameraFeed'
 import ZoneDrawer from './components/ZoneDrawer'
 import SpatialHeatmap from './components/SpatialHeatmap'
 import SpatialCalibrator from './components/SpatialCalibrator'
-import { fetchStats, fetchAIInsights, fetchAIEvents, fetchCameras, fetchBuildingTotal, fetchPlants, deleteCamera, resetStats } from './api'
+import { fetchStats, fetchAIInsights, fetchAIEvents, fetchCameras, fetchBuildingTotal, fetchPlants, deleteCamera, restartCamera, resetStats } from './api'
 import './App.css'
 
 function App() {
@@ -21,22 +21,43 @@ function App() {
     const [configCalibrationCameraId, setConfigCalibrationCameraId] = useState(null);
     const [heatmapCamera, setHeatmapCamera] = useState(null);
 
+    const [isDemoMode, setIsDemoMode] = useState(false);
+
     useEffect(() => {
         const poll = async () => {
+            if (isDemoMode) {
+                // System metadata only
+                setInsights({
+                    system_status: 'DEMO MODE',
+                    uptime: '1h 22m',
+                    gpu_util: '45%'
+                });
+                return;
+            }
             try {
                 const [s, ai, plants] = await Promise.all([fetchStats(), fetchAIInsights(), fetchPlants()]);
                 setStats(s);
                 setInsights(ai);
                 setPlantStats(plants || {});
-            } catch (e) { }
+            } catch (e) { 
+                setInsights(prev => ({ ...prev, system_status: 'OFFLINE' }));
+            }
         };
         poll();
         const id = setInterval(poll, 2000);
         return () => clearInterval(id);
-    }, []);
+    }, [isDemoMode]);
 
     useEffect(() => {
         const poll = async () => {
+            if (isDemoMode) {
+                setCameras([
+                    { id: 'cam1', name: 'Main Lobby', plant: 'Plant A', area: 'Entrance', people_count: 3, total_detected: 142 },
+                    { id: 'cam2', name: 'Back Loading Dock', plant: 'Plant A', area: 'Logistics', people_count: 1, total_detected: 89 },
+                    { id: 'cam3', name: 'Production Line 4', plant: 'Plant B', area: 'Assembly', people_count: 8, total_detected: 1024 }
+                ]);
+                return;
+            }
             try {
                 const [cams, evs] = await Promise.all([
                     fetchCameras(), fetchAIEvents()
@@ -48,9 +69,10 @@ function App() {
         poll();
         const id = setInterval(poll, 5000);
         return () => clearInterval(id);
-    }, []);
+    }, [isDemoMode]);
 
     const handleDeleteCamera = async (camId) => {
+        if (isDemoMode) return alert('Cannot delete cameras in Demo Mode');
         if (!confirm('Remove this camera?')) return;
         try {
             await deleteCamera(camId);
@@ -58,12 +80,33 @@ function App() {
         } catch (e) { }
     };
 
+    const handleRestartCamera = async (camId) => {
+        if (isDemoMode) return alert('Cannot restart in Demo Mode');
+        try {
+            const res = await restartCamera(camId);
+            if (res.error) alert(res.error);
+            else alert('Camera restart signal sent');
+        } catch (e) { 
+            alert('Failed to connect to backend for restart');
+        }
+    };
+
     const handleResetStats = async () => {
+        if (isDemoMode) return setStats({ in: 0, out: 0, occupancy: 0, fps: 0 });
         if (!confirm('Reset all analytics counts?')) return;
         try {
             await resetStats();
             setStats(prev => ({ ...prev, in: 0, out: 0, occupancy: 0 }));
         } catch (e) { }
+    };
+
+    const handleDemoCount = (type) => {
+        setStats(prev => ({
+            ...prev,
+            in: type === 'in' ? prev.in + 1 : prev.in,
+            out: type === 'out' ? prev.out + 1 : prev.out,
+            occupancy: type === 'in' ? prev.occupancy + 1 : (type === 'out' ? Math.max(0, prev.occupancy - 1) : prev.occupancy)
+        }));
     };
 
     return (
@@ -72,11 +115,16 @@ function App() {
             <div className="bg-blob blob-2"></div>
 
             <Header
-                status={insights?.system_status || 'NORMAL'}
+                status={isDemoMode ? 'DEMO' : (insights?.system_status || 'NORMAL')}
                 onManageCameras={() => setShowCameraManager(true)}
                 onResetStats={handleResetStats}
                 onToggleAI={() => setShowAI(!showAI)}
                 showAI={showAI}
+                isDemoMode={isDemoMode}
+                onToggleDemo={() => {
+                    setIsDemoMode(!isDemoMode);
+                    if (!isDemoMode) setStats({ in: 0, out: 0, occupancy: 0, fps: 29.5 });
+                }}
             />
 
             <div className="dashboard-container">
@@ -92,12 +140,12 @@ function App() {
                             </div>
                         ))}
                         
-                        {/* Fallback if no plants data yet */}
-                        {Object.keys(plantStats).length === 0 && (
+                        {/* Fallback if no plants data yet or Demo mode */}
+                        {(Object.keys(plantStats).length === 0 || isDemoMode) && (
                             <div className="bento-card kpi-card primary">
                                 <span className="kpi-label">Active Occupancy</span>
                                 <div className="kpi-value text-gradient">
-                                    {stats.occupancy} <span className="kpi-unit">detecting...</span>
+                                    {stats.occupancy} <span className="kpi-unit">{isDemoMode ? 'simulated' : 'detecting...'}</span>
                                 </div>
                             </div>
                         )}
@@ -110,7 +158,7 @@ function App() {
                         </div>
                         <div className="bento-card kpi-card">
                             <span className="kpi-label">Total Exits</span>
-                            <div className="kpi-value" style={{ color: '#6366f1' }}>
+                            <div className="kpi-value" style={{ color: 'var(--secondary)' }}>
                                 {stats.out}
                             </div>
                         </div>
@@ -126,18 +174,26 @@ function App() {
                                         alt={cam.name} 
                                         index={index}
                                         total={cameras.length}
+                                        isDemoMode={isDemoMode}
+                                        onDemoCount={handleDemoCount}
                                     />
                                     <div className="tile-overlay-top">
                                         <div className="live-indicator">
-                                            <span className="live-dot" />
-                                            LIVE
+                                            <span className={`live-dot ${isDemoMode ? 'demo' : ''}`} />
+                                            {isDemoMode ? 'DEMO FEED' : 'LIVE'}
                                         </div>
                                         <div className="tile-info-badge">
-                                            {cam.people_count || 0} PPL 
-                                            {cam.total_detected > (cam.people_count || 0) && (
-                                                <span style={{ fontSize: '0.8em', opacity: 0.7, marginLeft: '4px' }}>
-                                                    ({cam.total_detected} total)
-                                                </span>
+                                            {isDemoMode ? (
+                                                <>
+                                                    <span className="badge-primary">{stats.occupancy > 0 ? Math.floor(stats.occupancy / cameras.length) + (index === 0 ? stats.occupancy % cameras.length : 0) : 0} IN ZONE</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <span className="badge-primary">{cam.people_count || 0} IN ZONE</span>
+                                                    {cam.total_detected > 0 && (
+                                                        <span className="badge-secondary">{cam.total_detected} TOTAL</span>
+                                                    )}
+                                                </>
                                             )}
                                         </div>
                                     </div>
@@ -148,6 +204,9 @@ function App() {
                                         <span className="tile-meta">{cam.plant} • {cam.area}</span>
                                     </div>
                                     <div className="tile-actions">
+                                        <button className="action-btn" title="Restart AI Engine" onClick={() => handleRestartCamera(cam.id)}>
+                                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 12c0-4.4 3.6-8 8-8 3.3 0 6.2 2 7.4 5M22 12c0 4.4-3.6 8-8 8-3.3 0-6.2-2-7.4-5"/></svg>
+                                        </button>
                                         <button className="action-btn" title="Zones" onClick={() => setConfigZoneCameraId(cam.id)}>
                                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
                                         </button>

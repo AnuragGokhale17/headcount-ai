@@ -248,13 +248,19 @@ class CameraProcessor:
                         class_id=np.array([0] * len(payload['tracker_ids'])),
                         tracker_id=np.array(payload['tracker_ids'])
                     )
+                    # Raw count is always the length of detections
                     self.stats['total_detected'] = len(payload['tracker_ids'])
             except Exception as e:
                 print(f"  ⚠️ [{self.name}] Data parse error: {e}")
                 continue
 
             curr_time = time.time()
-
+            
+            # --- UPDATE OCCUPANCY ---
+            # If DeepStream provides a 'stable_count' (which it does in ds_app.py), use it.
+            # Otherwise, use the number of people currently tracked in Zone B.
+            ds_stable_count = payload.get('count')
+            
             # B. Check for Zone Config Changes (Your Original Logic)
             if self._zones_changed.is_set() or zone_a is None:
                 self._zones_changed.clear()
@@ -361,9 +367,12 @@ class CameraProcessor:
                 self.stats['in'] = self.people_in_count
                 self.stats['out'] = self.people_out_count
                 
+                # Use DeepStream's stable count if available, otherwise use our tracked set
+                target_occ = ds_stable_count if ds_stable_count is not None else len(counted_in_ids)
+                
                 # --- Jitter Smoothing ---
-                self.occupancy_history.append(len(counted_in_ids))
-                if len(self.occupancy_history) > 30: # ~1-2 seconds of history
+                self.occupancy_history.append(target_occ)
+                if len(self.occupancy_history) > 10: # Faster response (0.5s at 20fps)
                     self.occupancy_history.pop(0)
                 
                 if self.occupancy_history:
@@ -371,7 +380,7 @@ class CameraProcessor:
                     stable_occ = max(set(self.occupancy_history), key=self.occupancy_history.count)
                     self.stats['occupancy'] = stable_occ
                 else:
-                    self.stats['occupancy'] = len(counted_in_ids)
+                    self.stats['occupancy'] = target_occ
                     
                 self.stats['fps'] = payload.get('fps', 0)
 
@@ -440,12 +449,27 @@ class CameraManager:
         """Returns the pre-validated FINAL_DS_API_URL defined at the top."""
         return FINAL_DS_API_URL
 
+    def restart_camera(self, camera_id):
+        """Restarts a camera by stopping and starting it."""
+        cam = self.memory.get_camera(camera_id)
+        if not cam:
+            return False, "Camera not found in database"
+        
+        print(f"  🔄 Restarting camera {camera_id} ({cam['name']})...")
+        self.stop_camera(camera_id)
+        return self.start_camera(camera_id, cam["name"], cam["url"], cam["area"], cam.get("plant", "Plant 1"))
+
     def start_camera(self, camera_id, name, url, area="default", plant="Plant 1"):
         """Syncs the camera with DeepStream and starts the local logic engine."""
         clean_api = self._get_clean_api_url()
         sync_success = True
         error_msg = None
         
+        # Auto-correct local file paths for DeepStream
+        if url.startswith("/workspace") and not url.startswith("file://"):
+            url = f"file://{url}"
+            print(f"  📝 [Bridge] Auto-formatted local path: {url}")
+
         with self._lock:
             # 1. Tell DeepStream Bridge to add this RTSP source
             try:
@@ -453,7 +477,7 @@ class CameraManager:
                 resp = requests.post(
                     f"{clean_api}/api/v1/sources",
                     json={"camera_id": camera_id, "url": url},
-                    timeout=5,
+                    timeout=4,
                 )
                 if resp.ok:
                     print(f"  🔗 DeepStream: source {camera_id} added")

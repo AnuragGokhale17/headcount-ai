@@ -43,6 +43,35 @@ services:
 
     restart: unless-stopped
 
+  amc-backend:
+    image: nvcr.io/nvidia/auto-magic-calib:2.0.0
+    container_name: headcount_amc_backend
+    privileged: true
+    environment:
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - NVIDIA_VISIBLE_DEVICES=all
+    volumes:
+      - ./recordings:/recordings
+      - ./amc_calibration:/amc_calibration
+      - ./amc_calibration/mv_amc_config.yaml:/app/config/mv_amc_config.yaml
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+
+  amc-ui:
+    image: nvcr.io/nvidia/automagiccalibui:2.0.0
+    container_name: headcount_amc_ui
+    ports:
+      - "5001:5000"
+    depends_on:
+      - amc-backend
+    restart: unless-stopped
+
   backend:
     build:
       context: .

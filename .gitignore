@@ -9,10 +9,15 @@ ENV/
 # DeepStream / AI
 *.engine
 *.plan
+*.onnx
+*.pth
 .setup_done
 deepstream/nvdsinfer_custom_impl_Yolo/
 deepstream/start_ds_linux.sh
 deepstream/start_ds_fixed.sh
+deepstream/_deep_person_reid/
+deepstream/reid_venv/
+deepstream/models/
 
 # Web App / Node
 node_modules/
@@ -25,3 +30,4 @@ Thumbs.db
 *.log
 data/
 zones.json
+

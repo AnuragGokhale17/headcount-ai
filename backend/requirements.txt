@@ -10,3 +10,5 @@ python-dotenv
 ollama
 faster-whisper
 edge-tts
+pyyaml
+

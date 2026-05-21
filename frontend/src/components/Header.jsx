@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './Header.css';
 
-function Header({ status, onManageCameras, onResetStats, onToggleAI, showAI }) {
+function Header({ status, onManageCameras, onResetStats, onToggleAI, showAI, isDemoMode, onToggleDemo }) {
     const [clock, setClock] = useState('');
 
     useEffect(() => {
@@ -24,13 +24,22 @@ function Header({ status, onManageCameras, onResetStats, onToggleAI, showAI }) {
                 <div className="header-telemetry">
                     <div className="telemetry-item">
                         <span className="telemetry-label">Network Status</span>
-                        <span className="telemetry-value" style={{ color: 'var(--accent)' }}>
-                            Online
+                        <span className="telemetry-value" style={{ 
+                            color: status === 'OFFLINE' ? 'var(--secondary)' : 'var(--accent)' 
+                        }}>
+                            {status === 'OFFLINE' ? 'Disconnected' : (isDemoMode ? 'Simulation' : 'Connected')}
                         </span>
                     </div>
                 </div>
 
                 <div className="header-nav">
+                    <button 
+                        className={`header-btn ${isDemoMode ? 'active' : ''}`} 
+                        onClick={onToggleDemo}
+                        style={{ borderColor: isDemoMode ? 'var(--accent)' : '' }}
+                    >
+                        {isDemoMode ? 'Disable Demo' : 'Demo Mode'}
+                    </button>
                     <button className="header-btn" onClick={onManageCameras}>Manage Nodes</button>
                     <button className="header-btn" onClick={onToggleAI}>{showAI ? 'Hide Analytics' : 'AI Analytics'}</button>
                     <button className="header-btn primary" onClick={onResetStats}>Reset Counts</button>

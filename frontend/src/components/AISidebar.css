@@ -63,7 +63,7 @@
     padding: 28px;
     border-radius: 20px;
     background: var(--grad-surface);
-    border: 1px solid rgba(79, 70, 229, 0.1);
+    border: 1px solid rgba(236, 30, 47, 0.1);
     box-shadow: var(--shadow-soft);
 }
 
@@ -184,5 +184,5 @@
 
 .terminal-input:focus {
     border-color: var(--primary);
-    box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.1);
+    box-shadow: 0 0 0 4px rgba(236, 30, 47, 0.1);
 }

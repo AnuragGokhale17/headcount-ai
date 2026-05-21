@@ -11,6 +11,7 @@ NvMultiObjectTracker:
   earlyTerminationAge: 1
 
   NvDCF:
+    # --- Visual Feature Estimation (Short-term tracking) ---
     visualFeatureEst: 1
     colorNamesEst: 1
     maxImageScale: 640
@@ -23,3 +24,32 @@ NvMultiObjectTracker:
     kalmanProcessNoiseVar: 0.01
     kalmanMeasurementNoiseVar: 0.1
     kalmanVelocityNoiseVar: 0.05
+
+    # --- ReID Configuration (Long-term re-association) ---
+    # reidType: 0=DUMMY, 1=NvDEEPSORT, 2=ReID-based reassoc, 3=both
+    reidType: 2
+    # Enable ReID tensor output (needed for future cross-camera matching)
+    outputReidTensor: 1
+
+    ReID:
+      batchSize: 32
+      workspaceSize: 1000
+      reidFeatureSize: 512
+      reidHistorySize: 100
+      inferDims: [3, 256, 128]
+      networkMode: 1          # FP16 for optimal TensorRT perf on RTX 5090
+
+      # --- Model Paths (volume-mounted from host) ---
+      onnxFile: "/workspace/deepstream/models/reid/osnet_ain_x1_0.onnx"
+      modelEngineFile: "/workspace/deepstream/models/reid/osnet_ain_x1_0.engine"
+
+      # --- Preprocessing (must match torchreid training config) ---
+      inputOrder: 0           # NCHW
+      colorFormat: 0          # RGB
+      # ImageNet normalization: pixel/255 then subtract mean, divide by std
+      # Combined: netScaleFactor = 1/255 = 0.00392156
+      # offsets = mean * 255 = [123.675, 116.28, 103.53]
+      netScaleFactor: 0.00392156
+      offsets: [123.675, 116.28, 103.53]
+      # OSNet output is NOT L2-normalized — let NvDCF do it
+      addFeatureNormalization: 1

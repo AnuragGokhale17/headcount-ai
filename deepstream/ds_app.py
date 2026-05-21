@@ -207,10 +207,9 @@ class DeepStreamBridge:
         
         # Direct Push Bridge -> MediaMTX
         # Modern rtspclientsink automatically handles RTP payloading internally.
-        # Passing it an already-payloaded stream (rtph264pay) caused the previous caps conflict.
-        # We pass the parsed H.264 stream directly to the sink.
+        # sync=true ensures file sources play at normal 1x speed instead of as fast as possible.
         push_bin = Gst.parse_bin_from_description(
-            "h264parse ! rtspclientsink location=rtsp://mediamtx:8554/stream protocols=tcp", 
+            "h264parse ! identity sync=true ! rtspclientsink location=rtsp://mediamtx:8554/stream protocols=tcp", 
             True 
         )
 
@@ -248,10 +247,16 @@ class DeepStreamBridge:
         if tracker_src_pad:
             tracker_src_pad.add_probe(Gst.PadProbeType.BUFFER, self._tracker_probe, 0)
 
-        # --- Snapshot Probe (On TILER src pad - always RGBA) ---
-        tiler_src_pad = self.tiler.get_static_pad("src")
-        if tiler_src_pad:
-            tiler_src_pad.add_probe(Gst.PadProbeType.BUFFER, self._snapshot_probe, 0)
+        # --- Futuristic Styling Probe (On OSD sink pad) ---
+        osd_sink_pad = nvosd.get_static_pad("sink")
+        if osd_sink_pad:
+            osd_sink_pad.add_probe(Gst.PadProbeType.BUFFER, self._osd_sink_probe, 0)
+
+
+        # --- Snapshot Probe (On nvvidconv src pad - always RGBA) ---
+        nvvidconv_src_pad = nvvidconv.get_static_pad("src")
+        if nvvidconv_src_pad:
+            nvvidconv_src_pad.add_probe(Gst.PadProbeType.BUFFER, self._snapshot_probe, 0)
 
     def _setup_rtsp_server(self):
         """Deprecated: We now push directly to MediaMTX via rtspclientsink."""
@@ -327,10 +332,22 @@ class DeepStreamBridge:
                 # Report tracked people (Class 0)
                 if obj_meta.class_id == 0:
                     r = obj_meta.rect_params
+                    
+                    # --- Elegant White Styling ---
+                    r.border_width = 1
+                    r.border_color.set(1.0, 1.0, 1.0, 1.0) # White
+                    r.has_bg_color = 0 # No background for clean look
+                    
+                    # Update text styling
+                    t = obj_meta.text_params
+                    t.font_params.font_color.set(1.0, 1.0, 1.0, 1.0)
+                    t.set_bg_clr = 0 # Transparent text background
+                    
                     # Official NvDCF Tracking ID!
                     tracker_ids.append(int(obj_meta.object_id))
                     xyxy_list.append([float(r.left), float(r.top), float(r.left+r.width), float(r.top+r.height)])
                     conf_list.append(float(obj_meta.confidence))
+
                 
                 l_obj = l_obj.next
 
@@ -339,12 +356,14 @@ class DeepStreamBridge:
             if si:
                 si.frame_count += 1
                 
-                # Update stable headcount
+                # Update stable headcount using a more responsive Median
                 si.count_history.append(len(tracker_ids))
-                if len(si.count_history) > 20:
+                if len(si.count_history) > 5: # Faster window
                     si.count_history.pop(0)
+                
                 if si.count_history:
-                    si.stable_count = max(set(si.count_history), key=si.count_history.count)
+                    # Use median to be more responsive to crowd increases
+                    si.stable_count = int(np.median(si.count_history))
 
                 # Calculate FPS
                 now = time.time()
@@ -370,6 +389,72 @@ class DeepStreamBridge:
 
             l_frame = l_frame.next
         return Gst.PadProbeReturn.OK
+
+    def _osd_sink_probe(self, pad, info, _user_data):
+        """
+        Adds futuristic corner accents to the bounding boxes.
+        """
+        gst_buffer = info.get_buffer()
+        if not gst_buffer: return Gst.PadProbeReturn.OK
+
+        batch_meta = pyds.gst_buffer_get_nvds_batch_meta(hash(gst_buffer))
+        l_frame = batch_meta.frame_meta_list
+        while l_frame is not None:
+            frame_meta = pyds.NvDsFrameMeta.cast(l_frame.data)
+            display_meta = pyds.nvds_acquire_display_meta_from_pool(batch_meta)
+            
+            l_obj = frame_meta.obj_meta_list
+            line_count = 0
+            
+            while l_obj is not None:
+                obj_meta = pyds.NvDsObjectMeta.cast(l_obj.data)
+                if obj_meta.class_id == 0: # Person
+                    r = obj_meta.rect_params
+                    L, T, W, H = r.left, r.top, r.width, r.height
+                    corner_len = min(W, H) * 0.15 # 15% of size
+                    
+                    # Futuristic Corners (8 lines per person)
+                    # Top-Left
+                    self._add_line(display_meta, line_count, L, T, L + corner_len, T)
+                    self._add_line(display_meta, line_count + 1, L, T, L, T + corner_len)
+                    # Top-Right
+                    self._add_line(display_meta, line_count + 2, L + W, T, L + W - corner_len, T)
+                    self._add_line(display_meta, line_count + 3, L + W, T, L + W, T + corner_len)
+                    # Bottom-Left
+                    self._add_line(display_meta, line_count + 4, L, T + H, L + corner_len, T + H)
+                    self._add_line(display_meta, line_count + 5, L, T + H, L, T + H - corner_len)
+                    # Bottom-Right
+                    self._add_line(display_meta, line_count + 6, L + W, T + H, L + W - corner_len, T + H)
+                    self._add_line(display_meta, line_count + 7, L + W, T + H, L + W, T + H - corner_len)
+                    
+                    line_count += 8
+                    
+                if line_count >= 15: # Display meta limit is usually small
+                    display_meta.num_lines = line_count
+                    pyds.nvds_add_display_meta_to_frame(frame_meta, display_meta)
+                    display_meta = pyds.nvds_acquire_display_meta_from_pool(batch_meta)
+                    line_count = 0
+                    
+                l_obj = l_obj.next
+            
+            if line_count > 0:
+                display_meta.num_lines = line_count
+                pyds.nvds_add_display_meta_to_frame(frame_meta, display_meta)
+
+            
+            l_frame = l_frame.next
+        return Gst.PadProbeReturn.OK
+
+    def _add_line(self, display_meta, idx, x1, y1, x2, y2):
+        line = display_meta.line_params[idx]
+        line.x1 = int(x1)
+        line.y1 = int(y1)
+        line.x2 = int(x2)
+        line.y2 = int(y2)
+        line.line_width = 2
+        line.line_color.set(1.0, 1.0, 1.0, 1.0) # White corner
+
+
 
     def _snapshot_probe(self, pad, info, _user_data):
         """Extracts snapshots for all sources by cropping the tiled RGBA frame."""
@@ -478,8 +563,17 @@ class DeepStreamBridge:
             # CRITICAL: We wait until uridecodebin emits a pad BEFORE dynamically linking to streammux.
             # Up-front linking here actively triggers a DeepStream memory segfault downstream.
 
-            # Sync state with the running pipeline
-            source_bin.sync_state_with_parent()
+            # Sync state with the running pipeline (non-blocking for API)
+            GLib.idle_add(source_bin.sync_state_with_parent)
+
+            # --- Dynamic Batch Scaling ---
+            active_count = len(self.sources) + 1 
+            if active_count > STREAMMUX_BATCH_SIZE:
+                # Update ALL batch-aware elements to prevent starvation
+                self.streammux.set_property("batch-size", active_count)
+                pgie = self.pipeline.get_by_name("primary-gie")
+                if pgie: pgie.set_property("batch-size", active_count)
+                log.info("  📈 Scaling pipeline batch-size to %d", active_count)
 
             info = SourceInfo(camera_id, url, source_id, source_bin)
             info.sinkpad = sinkpad
@@ -566,27 +660,28 @@ class DeepStreamBridge:
         uri_decode_bin.connect("source-setup", self._on_source_setup)
 
         
-        # Handle decoded out pads natively
-        uri_decode_bin.connect("pad-added", self._on_pad_added, nbin, source_id)
-
-        nbin.add(uri_decode_bin)
-
         # -- Universal Hardware Memory Bridge --
         conv = Gst.ElementFactory.make("nvvideoconvert", f"conv-{source_id}")
-        # Note: 'add-borders' or 'enable-padding' availability depends on DS version.
-        # Removing to avoid TypeError. Aspect ratio is handled in nvinfer.
-        
         caps = Gst.ElementFactory.make("capsfilter", f"caps-{source_id}")
-        # Standardized to 1080p to match the streammux and tiler for maximum clarity
-        caps.set_property("caps", Gst.Caps.from_string("video/x-raw(memory:NVMM), format=NV12, width=1920, height=1080"))
+        # Allow native resolution. nvstreammux will pad it to 1080p, fixing the "tilted" boxes.
+        caps.set_property("caps", Gst.Caps.from_string("video/x-raw(memory:NVMM), format=NV12"))
         
+        nbin.add(uri_decode_bin)
         nbin.add(conv)
         nbin.add(caps)
         conv.link(caps)
 
+        # Handle decoded out pads natively
+        uri_decode_bin.connect("pad-added", self._on_pad_added, nbin, source_id)
+
         # Ghost pad purely points to caps filter's guaranteed NV12 output
         ghost_pad = Gst.GhostPad.new("src", caps.get_static_pad("src"))
         ghost_pad.set_active(True)
+        
+        # Add event probe on ghost pad to detect EOS and loop the video stream (only for files)
+        if uri.startswith("file://"):
+            ghost_pad.add_probe(Gst.PadProbeType.EVENT_DOWNSTREAM, self._on_source_pad_event, source_id, nbin)
+        
         nbin.add_pad(ghost_pad)
 
         return nbin
@@ -621,12 +716,13 @@ class DeepStreamBridge:
             log.info("  🚫 Source %d: Ignored non-video pad (%s)", source_id, name)
             return
 
-        conv = source_bin.get_by_name(f"conv-{source_id}")
-        if not conv:
-            log.error("  ❌ Source %d: critical failure, nvvideoconvert missing", source_id)
+        flip_elem = source_bin.get_by_name(f"flip-{source_id}")
+        target_sink_elem = flip_elem if flip_elem else source_bin.get_by_name(f"conv-{source_id}")
+        
+        conv_sink = target_sink_elem.get_static_pad("sink")
+        if not conv_sink:
+            log.error("  ❌ Source %d: critical failure, target sink element missing", source_id)
             return
-
-        conv_sink = conv.get_static_pad("sink")
 
         # 1. First link downstream to streammux BEFORE connecting upstream
         # This ensures STREAM_START and SEGMENT events reach the streammux
@@ -644,17 +740,41 @@ class DeepStreamBridge:
                 except Exception as e:
                     log.error("  ❌ Source %d: Exception on streammux link: %s", source_id, e)
 
-        # 2. Then link the uridecodebin pad to conv
+        # 2. Then link the uridecodebin pad to conv/flip
         if not conv_sink.is_linked():
             ret = pad.link(conv_sink)
             if ret != Gst.PadLinkReturn.OK:
-                log.error("  ❌ Source %d: failed to natively link to hardware convert (ret=%s)", source_id, ret)
+                log.error("  ❌ Source %d: failed to natively link to hardware convert/flip (ret=%s)", source_id, ret)
                 return
 
         features = caps.get_features(0)
         mem_type = "NVMM" if features and features.contains("memory:NVMM") else "System"
         log.info("  ✅ Source %d: decoded video ready (%s, memory: %s) mapped to hardware bridge",
                  source_id, name, mem_type)
+
+    def _on_source_pad_event(self, pad, info, source_id, source_bin):
+        """Pad probe that intercepts downstream events on the source bin's output pad."""
+        event = info.get_event()
+        if event.type == Gst.EventType.EOS:
+            log.warning("  🔁 Source %d: EOS reached, looping back to start", source_id)
+            # Safely schedule the seek from the GLib main loop context
+            GLib.idle_add(self._perform_seek, source_bin)
+            # Drop the EOS event so it doesn't propagate downstream to streammux
+            return Gst.PadProbeReturn.DROP
+        return Gst.PadProbeReturn.OK
+
+    def _perform_seek(self, source_bin):
+        """Seeks the specified source bin back to the beginning."""
+        # Using a flushing seek to clear the pipelines of old buffers
+        seek_success = source_bin.seek_simple(
+            Gst.Format.TIME,
+            Gst.SeekFlags.FLUSH | Gst.SeekFlags.KEY_UNIT,
+            0,
+        )
+        if not seek_success:
+            log.error("  ❌ Failed to seek source bin %s back to start", source_bin.get_name())
+        # Return False to run once (requirement for GLib.idle_add)
+        return False
 
     # ------------------------------------------------------------------
     # Pipeline lifecycle
@@ -689,8 +809,35 @@ class DeepStreamBridge:
         """Handle GStreamer bus messages — resilient to ONVIF metadata errors."""
         t = msg.type
         if t == Gst.MessageType.EOS:
-            log.warning("End-of-stream received")
-            self.loop.quit()
+            # --------------------------------------------------------------
+            # End‑of‑Stream received – we want the source to loop indefinitely.
+            # We must only seek the specific file source bin that reached EOS
+            # to avoid breaking live RTSP camera feeds!
+            # --------------------------------------------------------------
+            src_element = msg.src
+            source_bin = None
+            curr = src_element
+            while curr:
+                name = curr.get_name()
+                if name.startswith("source-bin-"):
+                    source_bin = curr
+                    break
+                curr = curr.get_parent()
+
+            if source_bin:
+                bin_name = source_bin.get_name()
+                log.warning("EOS received – looping file source bin %s back to start", bin_name)
+                seek_success = source_bin.seek_simple(
+                    Gst.Format.TIME,
+                    Gst.SeekFlags.FLUSH | Gst.SeekFlags.KEY_UNIT,
+                    0,
+                )
+                if not seek_success:
+                    log.error("Failed to seek source bin %s – file source may not loop", bin_name)
+                # Keep source bin in PLAYING state
+                source_bin.set_state(Gst.State.PLAYING)
+            else:
+                log.warning("Global or untracked EOS received")
         elif t == Gst.MessageType.ERROR:
             err, debug = msg.parse_error()
             src_name = msg.src.get_name() if msg.src else "unknown"

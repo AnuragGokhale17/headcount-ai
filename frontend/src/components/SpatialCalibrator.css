@@ -275,3 +275,63 @@
     color: #fff;
     font-weight: 600;
 }
+
+.amc-card {
+    background: var(--grad-surface);
+    padding: 20px;
+    border-radius: 16px;
+    border: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.amc-card h4 {
+    color: var(--primary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+}
+
+.amc-description {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    line-height: 1.4;
+    margin: 0;
+}
+
+.amc-upload-zone {
+    padding: 16px;
+    border: 2px dashed var(--border);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    background: var(--bg-surface);
+    transition: all 0.2s;
+    text-align: center;
+}
+
+.amc-upload-zone:hover {
+    border-color: var(--primary);
+    background: rgba(236, 30, 47, 0.05); /* corporate red hover */
+}
+
+.amc-upload-placeholder {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.amc-file-name {
+    font-size: 0.85rem;
+    color: #10b981; /* emerald green accent for success file select */
+    font-weight: 600;
+}
+
+.amc-upload-btn {
+    width: 100%;
+}
+

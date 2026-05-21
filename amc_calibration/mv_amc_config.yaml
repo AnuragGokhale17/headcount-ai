@@ -1,0 +1,34 @@
+# NVIDIA AutoMagicCalib (AMC) Multi-View Configuration
+
+calibration_settings:
+  # Minimum number of tracklet pairs required between two cameras
+  min_matched_tracklets: 5
+  
+  # RANSAC parameters for relative pose estimation
+  ransac:
+    min_samples: 3
+    residual_threshold: 2.0
+    max_trials: 2000
+
+  # Hungarian algorithm threshold for tracklet matching
+  max_distance_score_hungarian_threshold: 0.75
+  
+  # Minimum points in a tracklet to be considered valid
+  min_matching_points: 150
+
+  # Enable manual point selection if automatic matching is insufficient
+  enable_manual_adjustment: true
+
+  # Log level (DEBUG, INFO, ERROR)
+  log_level: "INFO"
+
+detector_settings:
+  # Default detector used for tracking
+  type: "transformer"
+  conf_threshold: 0.45
+
+# Output settings for Headcount AI integration
+output_settings:
+  save_directory: "/amc_calibration"
+  format: "yaml"
+  # Filename pattern will be matched by setup_offline_sources.py

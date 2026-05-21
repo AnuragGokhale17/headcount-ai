@@ -110,6 +110,15 @@ def update_camera(camera_id):
     return jsonify(_memory.get_camera(camera_id))
 
 
+@cameras_bp.route("/api/cameras/<int:camera_id>/restart", methods=["POST"])
+def restart_camera(camera_id):
+    """Restart a camera engine."""
+    success, error = _camera_manager.restart_camera(camera_id)
+    if success:
+        return jsonify({"success": True})
+    return jsonify({"error": error or "Failed to restart camera"}), 500
+
+
 @cameras_bp.route("/api/cameras/<int:camera_id>", methods=["DELETE"])
 def delete_camera(camera_id):
     cam = _memory.get_camera(camera_id)
@@ -281,6 +290,69 @@ def calibrate_camera(camera_id):
             return jsonify({"success": True, "matrix": matrix_list})
             
     return jsonify({"error": "Calibration failed"}), 500
+
+
+@cameras_bp.route("/api/cameras/<int:camera_id>/import_amc", methods=["POST"])
+def import_amc_calibration(camera_id):
+    """Import homography from NVIDIA AutoMagicCalib YAML file."""
+    import yaml
+    import numpy as np
+
+    if "file" not in request.files:
+        return jsonify({"error": "No file uploaded"}), 400
+
+    file = request.files["file"]
+    if file.filename == "":
+        return jsonify({"error": "No file selected"}), 400
+
+    try:
+        content = yaml.safe_load(file.read())
+    except Exception as e:
+        return jsonify({"error": f"Failed to parse YAML: {str(e)}"}), 400
+
+    if not isinstance(content, dict) or "projectionMatrix_3x4_w2p" not in content:
+        return jsonify({"error": "YAML must contain 'projectionMatrix_3x4_w2p' key"}), 400
+
+    proj_flat = content["projectionMatrix_3x4_w2p"]
+    if not isinstance(proj_flat, list) or len(proj_flat) != 12:
+        return jsonify({"error": "projectionMatrix_3x4_w2p must be a list of 12 numbers"}), 400
+
+    try:
+        # Convert flat list to 3x4 numpy array
+        P = np.array(proj_flat, dtype=np.float32).reshape(3, 4)
+
+        # Extract 3x3 matrix mapping (X_w, Y_w, 1) to (w*x_c, w*y_c, w) by dropping column index 2 (Z)
+        M_w2p = P[:, [0, 1, 3]]
+
+        # Compute the inverse to get Pixel-to-World mapping (H_p2w)
+        H_p2w = np.linalg.inv(M_w2p)
+
+        # Normalize the homography matrix so that the bottom-right element is 1.0
+        if H_p2w[2, 2] != 0:
+            H_p2w = H_p2w / H_p2w[2, 2]
+
+        matrix_list = H_p2w.tolist()
+
+        cam = _memory.get_camera(camera_id)
+        if not cam:
+            return jsonify({"error": "Camera not found"}), 404
+
+        success = _memory.update_camera_homography(camera_id, matrix_list)
+        if success:
+            # Update live merger
+            _camera_manager.merger.update_camera_homography(camera_id, matrix_list)
+            return jsonify({
+                "success": True, 
+                "matrix": matrix_list,
+                "msg": "Homography matrix successfully imported from AutoMagicCalib projection matrix."
+            })
+        else:
+            return jsonify({"error": "Failed to update camera homography in DB"}), 500
+
+    except np.linalg.LinAlgError:
+        return jsonify({"error": "The computed World-to-Pixel matrix is singular and cannot be inverted."}), 400
+    except Exception as e:
+        return jsonify({"error": f"Internal error during matrix calculation: {str(e)}"}), 500
 
 
 # =========================================================================
