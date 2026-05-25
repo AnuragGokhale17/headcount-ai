@@ -47,7 +47,7 @@ then
     echo "#################################"
 fi
 
-git clone --depth 1 -b "$remote_branch" https://github.com/NVIDIA-AI-IOT/deepstream_python_apps.git
+git clone -b "$remote_branch" https://github.com/NVIDIA-AI-IOT/deepstream_python_apps.git
 
 if [ $? -eq 0 ]; then
    echo "deepstream_python_apps cloned successfully from branch $remote_branch"
@@ -71,7 +71,7 @@ then
     echo "############################"
  
     cd /opt/nvidia/deepstream/deepstream/sources/deepstream_python_apps/bindings
-    git submodule update --init --depth 1
+    git submodule update --init
     python3 3rdparty/git-partial-submodule/git-partial-submodule.py restore-sparse
     apt-get install -y apt-transport-https ca-certificates -y
     update-ca-certificates

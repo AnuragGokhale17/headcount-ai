@@ -10,9 +10,9 @@ services:
     image: bluenviron/mediamtx:latest
     container_name: headcount_mediamtx
     ports:
-      - "8889:8889"       # WebRTC
-      - "8554:8554"       # RTSP
-      - "8189:8189/udp"   # WebRTC ICE
+      - "8889:8889" # WebRTC
+      - "8554:8554" # RTSP
+      - "8189:8189/udp" # WebRTC ICE
     volumes:
       - ./deepstream/mediamtx.yml:/mediamtx.yml
     restart: unless-stopped
@@ -31,6 +31,7 @@ services:
       - NVIDIA_VISIBLE_DEVICES=all
     volumes:
       - .:/workspace
+      - ./recordings:/workspace/recordings
     command: bash /workspace/deepstream/start_ds.sh
     working_dir: /workspace/deepstream
     deploy:
@@ -39,7 +40,7 @@ services:
           devices:
             - driver: nvidia
               count: all
-              capabilities: [gpu]
+              capabilities: [ gpu ]
 
     restart: unless-stopped
 
@@ -48,26 +49,40 @@ services:
     container_name: headcount_amc_backend
     privileged: true
     environment:
+      - HOST_IP=127.0.0.1
       - NVIDIA_DRIVER_CAPABILITIES=all
       - NVIDIA_VISIBLE_DEVICES=all
+      - PYTHONPATH=/home/auto-calibration-ms/server
     volumes:
       - ./recordings:/recordings
-      - ./amc_calibration:/amc_calibration
-      - ./amc_calibration/mv_amc_config.yaml:/app/config/mv_amc_config.yaml
+      - ./amc_calibration:/home/auto-calibration-ms/server/projects
+      - ./models:/home/auto-calibration-ms/server/models
+    working_dir: /home/auto-calibration-ms/server
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
               count: all
-              capabilities: [gpu]
+              capabilities: [ gpu ]
     restart: unless-stopped
 
   amc-ui:
-    image: nvcr.io/nvidia/automagiccalibui:2.0.0
+    image: nvcr.io/nvidia/auto-magic-calib-ui:2.0.0
     container_name: headcount_amc_ui
     ports:
-      - "5001:5000"
+      - "5001:80"
+    environment:
+      - API_URL=http://headcount_amc_proxy:8000
+      - VITE_API_URL=http://headcount_amc_proxy:8000
+      - REACT_APP_API_URL=http://headcount_amc_proxy:8000
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [ gpu ]
     depends_on:
       - amc-backend
     restart: unless-stopped
@@ -85,19 +100,9 @@ services:
       - DS_API_BASE=deepstream:8010
       - FLASK_ENV=production
     ports:
-      - "5000:5000"
+      - "5002:5000"
     volumes:
       - .:/app
       - ./data:/app/data
       - ./zones.json:/app/zones.json
     restart: unless-stopped
-
-  # Optional: Separate Frontend if not serving via Flask
-  # frontend:
-  #   build:
-  #     context: .
-  #     dockerfile: frontend/Dockerfile
-  #   container_name: headcount_frontend
-  #   ports:
-  #     - "80:80"
-  #   restart: unless-stopped

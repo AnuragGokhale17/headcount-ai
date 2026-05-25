@@ -1,0 +1,126 @@
+# Docker Compose Configuration - DHI Migrated Services
+# This file shows the recommended updates for redis and nginx services
+# Copy the relevant sections into your main docker-compose.yml
+
+services:
+  redis:
+    # MIGRATED: redis:7-alpine → dhi.io/redis:7-alpine
+    # Benefits: nonroot user execution, minimal attack surface, Docker-maintained security patches
+    image: dhi.io/redis:7-alpine
+    container_name: headcount_redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    # Optional: Add health check for better reliability
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  amc-proxy:
+    # MIGRATED: nginx:alpine → dhi.io/nginx:alpine
+    # Benefits: nonroot user execution, reduced CVE surface, Alpine-based minimal footprint
+    # IMPORTANT: Verify proxy.conf listens on ports 8000 and 5001 (non-privileged)
+    image: dhi.io/nginx:alpine
+    container_name: headcount_amc_proxy
+    ports:
+      - "8000:8000"
+      - "5001:5001"
+    volumes:
+      - ./amc_calibration/proxy.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - amc-backend
+      - amc-ui
+    restart: unless-stopped
+    # DHI nginx runs as uid:gid 101:101 by default (nonroot)
+    # Verify proxy.conf uses listen 8000 and listen 5001 (not privileged ports)
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  backend:
+    # UPDATED: Now uses DHI-migrated Dockerfile
+    # The Dockerfile has been updated to:
+    # 1. Use dhi.io/node:20-alpine-dev for frontend build (with npm)
+    # 2. Use dhi.io/python:3.10-alpine-dev for dependency installation
+    # 3. Use dhi.io/python:3.10-alpine for runtime (minimal, nonroot)
+    # 4. Implement proper multi-stage separation
+    # 5. Include explicit permission handling for nonroot user
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: headcount_backend
+    depends_on:
+      - redis
+      - deepstream
+    environment:
+      - REDIS_HOST=redis
+      - DS_API_BASE=deepstream:8010
+      - FLASK_ENV=production
+    ports:
+      - "5000:5000"
+    volumes:
+      - .:/app
+      - ./data:/app/data
+      - ./zones.json:/app/zones.json
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+# =============================================================================
+# MIGRATION VERIFICATION CHECKLIST
+# =============================================================================
+#
+# Before deploying, verify the following:
+#
+# 1. NGINX CONFIGURATION
+#    - [ ] ./amc_calibration/proxy.conf contains:
+#          server { listen 8000; ... }
+#          server { listen 5001; ... }
+#    - [ ] Ensure NO privileged ports (<1024) are used in nginx config
+#
+# 2. REDIS CONNECTIVITY
+#    - [ ] Test: docker-compose logs backend | grep -i redis
+#    - [ ] Verify connection string uses "redis" (service name) not localhost
+#
+# 3. FLASK APPLICATION
+#    - [ ] Backend starts without permission errors
+#    - [ ] React frontend assets load from /app/frontend/dist
+#    - [ ] File permissions allow Python app to read configuration files
+#
+# 4. PORT BINDINGS
+#    - [ ] Port 5000 (Flask) accessible from host
+#    - [ ] Port 6379 (Redis) accessible from backend service
+#    - [ ] Ports 8000, 5001 (Nginx) accessible from host
+#
+# 5. VOLUMES AND MOUNTS
+#    - [ ] Host volumes have read permissions for container processes
+#    - [ ] /app/data directory writable by Python process
+#    - [ ] zones.json file readable by Python process
+#
+# =============================================================================
+# ROLLBACK INSTRUCTIONS
+# =============================================================================
+#
+# If issues occur, revert with these commands:
+#
+# 1. Revert docker-compose.yml:
+#    - Replace dhi.io/redis:7-alpine with redis:7-alpine
+#    - Replace dhi.io/nginx:alpine with nginx:alpine
+#
+# 2. Revert backend/Dockerfile:
+#    - Restore original two-stage Dockerfile (see DHI_MIGRATION_GUIDE.md BEFORE section)
+#
+# 3. Redeploy:
+#    docker-compose down
+#    docker-compose up -d
+#
+# =============================================================================

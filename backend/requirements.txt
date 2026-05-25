@@ -11,4 +11,3 @@ ollama
 faster-whisper
 edge-tts
 pyyaml
-

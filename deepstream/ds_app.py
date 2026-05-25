@@ -533,6 +533,39 @@ class DeepStreamBridge:
                 log.error("No source slots available (max %d)", MAX_SOURCES)
                 return False
 
+            # --- PRE-FLIGHT CHECK FOR LOCAL FILES ---
+            if url.startswith("file://"):
+                file_path = url.replace("file://", "")
+                if not os.path.exists(file_path):
+                    log.error("❌ LOCAL FILE NOT FOUND: %s", file_path)
+                    
+                    # SYSTEM-LEVEL DIAGNOSIS
+                    import subprocess
+                    try:
+                        log.info("   🛠️  System Diagnosis (ls -la /workspace):")
+                        res = subprocess.check_output(["ls", "-la", "/workspace"], text=True)
+                        log.info("\n%s", res)
+                        
+                        log.info("   🛠️  System Diagnosis (ls -la /workspace/recordings):")
+                        res2 = subprocess.check_output(["ls", "-la", "/workspace/recordings"], text=True)
+                        log.info("\n%s", res2)
+                        
+                        log.info("   🛠️  Disk Usage (df -h /workspace):")
+                        res3 = subprocess.check_output(["df", "-h", "/workspace"], text=True)
+                        log.info("\n%s", res3)
+                    except Exception as e:
+                        log.error("   ❌ Diagnosis failed: %s", e)
+                    
+                    # Try to list directory for debugging
+                    parent = os.path.dirname(file_path)
+                    if os.path.exists(parent):
+                        log.info("   📂 Contents of %s: %s", parent, os.listdir(parent))
+                    else:
+                        log.error("   🚫 Parent directory does not exist: %s", parent)
+                    return False
+                else:
+                    log.info("   ✅ Local file verified: %s", file_path)
+
             source_id = self._source_id_pool.pop(0)
             source_bin = self._create_source_bin(source_id, url)
             if source_bin is None:
