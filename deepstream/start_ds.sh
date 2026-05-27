@@ -237,7 +237,11 @@ fi
 # 4. INSTALL APP DEPENDENCIES (Into the active venv)
 echo "🔨 Installing application dependencies..."
 # We pin pydantic to 2.10.6 to satisfy both FastAPI and DeepStream Triton's internal libs
-pip3 install "numpy<2.0" "opencv-python-headless<4.10" "pydantic==2.10.6" \
+pip3 install --default-timeout=1000 \
+    --trusted-host pypi.org \
+    --trusted-host pypi.python.org \
+    --trusted-host files.pythonhosted.org \
+    "numpy<2.0" "opencv-python-headless<4.10" "pydantic==2.10.6" \
     fastapi uvicorn redis requests python-multipart --force-reinstall
 
 # 5. BUILD YOLO PARSER (The "No Boxes" Fix)
@@ -251,9 +255,11 @@ if [ ! -f "$CUSTOM_PARSER_DIR/libnvdsinfer_custom_impl_Yolo.so" ]; then
     cp -r /tmp/ds_yolo/nvdsinfer_custom_impl_Yolo/* "$CUSTOM_PARSER_DIR/"
     
     cd "$CUSTOM_PARSER_DIR"
-    export CUDA_VER=12.6
+    export CUDA_VER=13.1
+    export PATH=/usr/local/cuda-$CUDA_VER/bin:$PATH
+    export CPLUS_INCLUDE_PATH=/usr/local/cuda-$CUDA_VER/targets/x86_64-linux/include:$CPLUS_INCLUDE_PATH
     make clean || true
-    make -j$(nproc)
+    make -j$(nproc) CXXFLAGS="-I/usr/local/cuda-$CUDA_VER/targets/x86_64-linux/include"
     echo "✅ YOLO Parser compiled."
 fi
 
