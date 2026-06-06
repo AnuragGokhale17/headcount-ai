@@ -1,0 +1,11 @@
+image:
+  width: 1281
+  height: 721
+region_split:
+  width: 22
+  height: 12
+box_sampling:
+  confidence: 0.5             # Lowered from 0.8 to ensure detections are captured
+  aspect_ratio_residual: 1.0  # Extremely relaxed to prevent "empty bboxes"
+  width_residual: 200         # Extremely relaxed
+  height_residual: 200        # Extremely relaxed

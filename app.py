@@ -24,11 +24,15 @@ from backend.routes.stats import stats_bp, init_stats_routes
 from backend.routes.zones import zones_bp, init_zones_routes
 from backend.routes.audio import audio_bp, init_audio_routes
 from backend.routes.cameras import cameras_bp, init_camera_routes
+from backend.routes.stream import stream_bp, init_stream_routes
 
 # ==============================================================================
 # --- APP FACTORY ---
 # ==============================================================================
-app = Flask(__name__, static_folder='frontend/dist', static_url_path='')
+basedir = os.path.abspath(os.path.dirname(__file__))
+app = Flask(__name__, 
+            static_folder=os.path.join(basedir, 'frontend/dist'), 
+            static_url_path='')
 
 
 # Manual CORS (allows React dev server on port 5173 to reach Flask on port 5000)
@@ -57,6 +61,7 @@ app.register_blueprint(stats_bp)
 app.register_blueprint(zones_bp)
 app.register_blueprint(audio_bp)
 app.register_blueprint(cameras_bp)
+app.register_blueprint(stream_bp)
 
 # --- Inject dependencies into routes ---
 init_stats_routes(ai_engine, camera_manager.get_aggregated_stats, camera_manager.reset_all_stats, memory)
@@ -64,6 +69,7 @@ init_audio_routes(ai_engine)
 init_camera_routes(memory, camera_manager, area_monitor)
 init_video_routes(camera_manager)
 init_zones_routes(camera_manager)
+init_stream_routes(camera_manager)
 
 # --- Serve static assets (logo etc.) ---
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static')
@@ -83,6 +89,12 @@ def serve_static(filename):
 @app.route('/')
 def serve_react():
     return send_from_directory(app.static_folder, 'index.html')
+
+
+@app.route('/assets/<path:filename>')
+def serve_assets(filename):
+    """Explicitly serve Vite/React built assets to avoid catch-all interference."""
+    return send_from_directory(os.path.join(app.static_folder, 'assets'), filename)
 
 
 @app.route('/<path:path>')

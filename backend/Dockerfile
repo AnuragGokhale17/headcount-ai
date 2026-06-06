@@ -1,21 +1,41 @@
 # Stage 1: Build the React frontend
-FROM node:20-alpine AS frontend-builder
+# Use the full node image which has build tools pre-installed
+FROM node:20 AS frontend-builder
 WORKDIR /build
+
+# Set environment to development
+ENV NODE_ENV=development
+
 COPY frontend/package*.json ./
-RUN npm config set strict-ssl false && npm install
+
+# High resilience npm install using HTTP registry to bypass some TLS/SSL filters
+RUN npm config set strict-ssl false && \
+    npm config set registry http://registry.npmjs.org/ && \
+    npm install --include=dev
+
 COPY frontend/ .
 RUN npm run build
 
 # Stage 2: Python backend
+# Use full python image (not slim) to avoid apt-get install for common build tools
 FROM python:3.10
 WORKDIR /app
 
-# Install Python requirements (long timeout for large packages)
-COPY backend/requirements.txt .
-RUN pip install --no-cache-dir --default-timeout=1000 --trusted-host pypi.org --trusted-host files.pythonhosted.org -r requirements.txt
+# Ensure pip is up to date and set high resilience
+RUN pip install --upgrade pip
 
-# Overwrite full opencv-python with headless variant (no libGL needed)
-RUN pip install --no-cache-dir --force-reinstall --no-deps --trusted-host pypi.org --trusted-host files.pythonhosted.org opencv-python-headless
+# Install Python requirements
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir --default-timeout=1000 \
+    --trusted-host pypi.org \
+    --trusted-host pypi.python.org \
+    --trusted-host files.pythonhosted.org \
+    -r requirements.txt
+
+# Overwrite with headless variant (this also has fewer dependencies)
+RUN pip install --no-cache-dir --force-reinstall --no-deps \
+    --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org \
+    opencv-python-headless
 
 # Copy all source code
 COPY . .

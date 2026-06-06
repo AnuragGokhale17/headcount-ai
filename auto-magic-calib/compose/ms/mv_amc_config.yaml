@@ -1,0 +1,55 @@
+cam_dir:
+- cam_00
+- cam_01
+- cam_02
+- cam_03
+video_resolution:
+- 1280
+- 720
+image_side_boundary: 0.05
+image_bottom_boundary: 0.9
+tracklet_filter:
+  min_length: 5
+  min_moving_dist: 0.1
+  min_mean_moving_dist: 0.0001
+use_smoothed_tracklets: false
+min_matching_points: 3
+min_scale: 0.01
+max_scale: 100.0
+min_dtw_score_threshold: 1000
+min_distance_score_threshold: 100.0
+max_distance_score_hungarian_threshold: 100.0
+min_matched_tracklets: 1
+max_matched_tracklets_dist: 100.0
+min_tracklet_dist: 0.1
+ransac_threshold: 100.0
+robust_two_view_calib:
+  enabled: true
+  min_matched_points: 3
+  min_matched_tracklets: 1
+  min_samples: 3
+  max_iterations: 5000
+  inlier_threshold: 100.0
+  min_inliers: 0.001
+  reproj_err_threshold: 1000.0
+skip_frame: 2
+distance_weight: 0.1
+ba_method: iterative
+input_cam_params: ba
+enable_manual_adjustment: false
+weight_manual_constraint: 10.0
+manual_adjustment_data_source: file
+logging_level: INFO
+robust_scale_estimation:
+  enabled: false
+  max_iterations: 1000
+  inlier_threshold: 0.5
+  min_inliers: 0.6
+  min_samples: 3
+  random_seed: 42
+vggt:
+  model_path: models/vggt/vggt_1B_commercial.pt
+  timestamp_sec: 0
+  temp_dir: temp
+  camInfo_dir: BA_output/results_ba/refined
+  skip_frame: 100

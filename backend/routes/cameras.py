@@ -137,13 +137,19 @@ def delete_camera(camera_id):
 @cameras_bp.route("/api/cameras/<int:camera_id>/feed")
 def camera_feed(camera_id):
     """MJPEG stream for a specific camera."""
+    print(f"🎬 [DEBUG] Feed requested for camera {camera_id}")
     def generate():
+        fail_count = 0
         while True:
             frame_bytes = _camera_manager.get_camera_frame(camera_id)
             if frame_bytes:
+                fail_count = 0
                 yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' +
                        frame_bytes + b'\r\n')
             else:
+                fail_count += 1
+                if fail_count % 50 == 0:
+                    print(f"⚠️ [DEBUG] Still no frame for camera {camera_id} (attempts: {fail_count})")
                 time.sleep(0.1)
 
     return Response(generate(), mimetype='multipart/x-mixed-replace; boundary=frame')
@@ -416,5 +422,52 @@ def set_area_limit(area):
 @cameras_bp.route("/api/building_total", methods=["GET"])
 def building_total():
     """Return the total people count aggregated across all active cameras with spatial deduplication."""
-    stats = _camera_manager.get_all_stats()
+    stats = _camera_manager.get_aggregated_stats()
     return jsonify({"total": stats.get("occupancy", 0)})
+
+# =========================================================================
+# AMC DYNAMIC CONFIGURATION
+# =========================================================================
+
+@cameras_bp.route("/api/amc/config", methods=["POST"])
+def update_amc_config():
+    """Update mv_amc_config.yaml with dynamic cam_dir list."""
+    import yaml
+    import os
+
+    data = request.get_json()
+    if not data or "video_count" not in data:
+        return jsonify({"error": "Missing 'video_count' in request body"}), 400
+
+    try:
+        count = int(data["video_count"])
+    except ValueError:
+        return jsonify({"error": "video_count must be an integer"}), 400
+
+    if count < 1:
+        return jsonify({"error": "At least 1 video is required"}), 400
+
+    cam_dirs = [f"cam_{i:02d}" for i in range(count)]
+
+    # Path to mv_amc_config.yaml
+    # __file__ is in backend/routes/cameras.py
+    # We need to go up three levels to reach the project root (/app in Docker)
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    yaml_path = os.path.join(base_dir, "auto-magic-calib", "compose", "ms", "mv_amc_config.yaml")
+
+    try:
+        with open(yaml_path, 'r') as f:
+            config = yaml.safe_load(f)
+
+        if config is None:
+            config = {}
+
+        config['cam_dir'] = cam_dirs
+
+        with open(yaml_path, 'w') as f:
+            yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+
+        return jsonify({"success": True, "cam_dir": cam_dirs})
+    except Exception as e:
+        return jsonify({"error": f"Failed to update AMC config: {str(e)}"}), 500
+

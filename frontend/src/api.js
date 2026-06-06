@@ -229,3 +229,13 @@ export async function importAmcCalibration(cameraId, file) {
     return res.json();
 }
 
+export async function updateAmcConfig(videoCount) {
+    const res = await fetch(`${API_BASE}/api/amc/config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ video_count: videoCount })
+    });
+    return res.json();
+}
+
+

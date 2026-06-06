@@ -33,3 +33,6 @@ zones.json
 
 recordings/
 test_videos/
+recordings3/
+GeoCalib/
+auto-magic-calib/projects

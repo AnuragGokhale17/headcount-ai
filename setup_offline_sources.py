@@ -34,24 +34,25 @@ def main():
     cursor = conn.cursor()
 
     # Map recording files to cameras
-    recordings_dir = "recordings"
+    recordings_dir = "recordings3"
     video_files = [
-        "cam1_20260521_124200.mp4",
-        "cam2_20260521_124200.mp4",
-        "cam3_20260521_124200.mp4"
+        "cam2_20260603_160600.mp4",
+        "cam3_20260603_160600.mp4",
+        "cam8_20260603_160600.mp4",
+        "cam10_20260603_160600.mp4"
     ]
-    
+
     # Path inside the DeepStream container
-    video_urls = [f"file:///workspace/recordings/{f}" for f in video_files]
+    video_urls = [f"file:///workspace/recordings3/{f}" for f in video_files]
 
     # Real AMC calibration directory
     calibration_dir = "amc_calibration"
-    
+
     # Try to find YAML files in the calibration directory
     all_amc_files = []
     if os.path.exists(calibration_dir):
         all_amc_files = [f for f in os.listdir(calibration_dir) if f.endswith('.yaml') and f != 'mv_amc_config.yaml']
-    
+
     # Map cameras to potential AMC files (simple positional mapping for now)
     amc_files = []
     for i in range(len(video_files)):
@@ -69,12 +70,11 @@ def main():
     # Clear any existing cameras to ensure a clean slate
     print("🧹 Clearing old camera database records...")
     cursor.execute("DELETE FROM cameras")
-    
+
     print(f"📝 Inserting {len(video_urls)} recorded cameras...")
     mock_cams = [
         ("Camera 1 - Entry", video_urls[0], "Entry Area", "Plant 1"),
-        ("Camera 2 - Workspace",  video_urls[1], "Workspace Area", "Plant 1"),
-        ("Camera 3 - Exit",  video_urls[2], "Exit Area", "Plant 1"),
+        ("Camera 2 - Workspace",  video_urls[1], "Workspace Area", "Plant 1")
     ]
     cursor.executemany(
         "INSERT INTO cameras (name, url, area, plant, created_at, is_active) VALUES (?, ?, ?, ?, datetime('now'), 1)",

@@ -535,8 +535,13 @@ class CameraManager:
             self._processors.clear()
 
     def get_all_stats(self):
+        """Thread-safe snapshot of all camera stats."""
         with self._lock:
-            return [proc.get_stats() for proc in self._processors.values()]
+            # Create a list of processors while holding the manager lock briefly
+            processors = list(self._processors.values())
+            
+        # Release manager lock before calling individual processor stats (which have their own locks)
+        return [p.get_stats() for p in processors]
 
     def reset_all_stats(self):
         """Reset IN/OUT stats for all active cameras."""
@@ -571,10 +576,7 @@ class CameraManager:
             avg_fps = int(avg_fps / active_count)
             
         # --- NEW SPATIAL DEDUPLICATION ---
-        all_dets = []
-        with self._lock:
-            for proc in self._processors.values():
-                all_dets.extend(proc.get_current_detections())
+        all_dets = self.get_all_detections()
         
         # If no homography matrices are set, fallback to simple sum
         if not self.merger.cameras_homography:
@@ -588,6 +590,22 @@ class CameraManager:
             "occupancy": total_occupancy,
             "fps": avg_fps
         }
+
+    def get_all_detections(self):
+        """Gather raw detections from all processors."""
+        all_dets = []
+        with self._lock:
+            # Snapshot of processors to avoid holding lock during point projection if we wanted to
+            processors = list(self._processors.values())
+            
+        for proc in processors:
+            all_dets.extend(proc.get_current_detections())
+        return all_dets
+
+    def get_spatial_data(self):
+        """Returns the deduplicated global coordinates for all people."""
+        all_dets = self.get_all_detections()
+        return self.merger.deduplicate(all_dets)
 
     def get_area_stats(self):
         area_counts = defaultdict(lambda: {"people_count": 0, "cameras": 0, "connected": 0})
@@ -636,9 +654,13 @@ class CameraManager:
                 decode_responses=False
             )
             self._redis.ping()
+            print(f"  ✅ CameraManager: Redis link active at {redis_host}")
             return self._redis
         except Exception as e:
-            print(f"  ⚠️ CameraManager: Redis link failed ({redis_host}:{redis_port}): {e}")
+            # Throttle error logs to once per minute
+            if not hasattr(self, '_last_redis_err') or (time.time() - self._last_redis_err > 60):
+                print(f"  ⚠️ CameraManager: Redis link failed ({raw_host}): {e}")
+                self._last_redis_err = time.time()
             self._redis = None
             return None
 
@@ -662,9 +684,7 @@ class CameraManager:
 
         # --- 2. TRY INTERNAL PROCESSOR BUFFER (Live Frame) ---
         # This is the fastest fallback and highly reliable
-        proc = None
-        with self._lock:
-            proc = self._processors.get(camera_id)
+        proc = self.get_processor(camera_id) # Uses short lock internally
         
         if proc:
             with proc.frame_lock:
@@ -672,19 +692,19 @@ class CameraManager:
                     return proc._encoded_frame
 
         # --- 3. TRY DIRECT RTSP (OpenCV) ---
-        # Only if the first two failed and we have a URL
         if proc and proc.url:
             now = time.time()
             if not hasattr(self, '_fallback_cache'): self._fallback_cache = {}
             
             cached_time, cached_frame = self._fallback_cache.get(camera_id, (0, None))
-            if now - cached_time < 3.0: # 3 second cache
+            if now - cached_time < 2.0: # Shorter 2 second cache
                 return cached_frame
 
             try:
-                # Use a non-blocking subprocess or very short timeout
+                # Direct capture is slow; we only do it if no other source is available
                 cap = cv2.VideoCapture(proc.url)
-                cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 1500)
+                # Set very short timeout to avoid hanging the entire API
+                cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 1000)
                 if cap.isOpened():
                     ret, frame = cap.read()
                     cap.release()
@@ -693,8 +713,8 @@ class CameraManager:
                         frame_bytes = buffer.tobytes()
                         self._fallback_cache[camera_id] = (now, frame_bytes)
                         return frame_bytes
-            except Exception as e:
-                print(f"  ⚠️ CameraManager: Direct grab fallback failed for {camera_id}: {e}")
+            except Exception:
+                pass
 
         return None
 

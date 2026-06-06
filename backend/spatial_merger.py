@@ -33,7 +33,7 @@ class SpatialMerger:
     def deduplicate(self, all_detections):
         """
         Takes a list of detections: [{'camera_id': 1, 'x': 100, 'y': 200, 'id': 10}, ...]
-        Returns a list of unique clusters: [{'x_global': 500, 'y_global': 500, 'cameras': [1, 2], 'original_ids': [10, 22]}]
+        Returns a list of unique clusters: [{'id': 10, 'x': 500.5, 'y': 500.2, 'cameras': [1, 2]}]
         """
         global_points = []
         for det in all_detections:
@@ -53,24 +53,37 @@ class SpatialMerger:
         for p in global_points:
             found_cluster = False
             for c in clusters:
-                dist = np.sqrt((p['gp'][0] - c['avg_gp'][0])**2 + (p['gp'][1] - c['avg_gp'][1])**2)
+                dist = np.sqrt((p['gp'][0] - c['x'])**2 + (p['gp'][1] - c['y'])**2)
                 if dist < self.proximity_threshold:
                     c['points'].append(p)
                     # Update average (centroid)
                     pts = [pt['gp'] for pt in c['points']]
-                    c['avg_gp'] = (np.mean([pt[0] for pt in pts]), np.mean([pt[1] for pt in pts]))
+                    c['x'] = float(np.mean([pt[0] for pt in pts]))
+                    c['y'] = float(np.mean([pt[1] for pt in pts]))
                     c['cameras'].add(p['camera_id'])
                     found_cluster = True
                     break
             
             if not found_cluster:
                 clusters.append({
-                    'avg_gp': p['gp'],
+                    'id': p['id'], # Use the tracker ID of the first point as the cluster ID
+                    'x': float(p['gp'][0]),
+                    'y': float(p['gp'][1]),
                     'points': [p],
                     'cameras': {p['camera_id']}
                 })
 
-        return clusters
+        # Final cleanup for JSON serialization
+        results = []
+        for c in clusters:
+            results.append({
+                'id': c['id'],
+                'x': c['x'],
+                'y': c['y'],
+                'cameras': list(c['cameras'])
+            })
+
+        return results
 
     def get_unique_count(self, all_detections):
         """Returns the total unique person count across all cameras."""

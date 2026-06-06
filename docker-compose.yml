@@ -2,17 +2,17 @@ services:
   redis:
     image: redis:7-alpine
     container_name: headcount_redis
-    ports:
-      - "6379:6379"
+    expose:
+      - "6379"
     restart: unless-stopped
 
   mediamtx:
     image: bluenviron/mediamtx:latest
     container_name: headcount_mediamtx
     ports:
-      - "8889:8889" # WebRTC
-      - "8554:8554" # RTSP
-      - "8189:8189/udp" # WebRTC ICE
+      - "8890:8889" # WebRTC (Host port changed to 8890)
+      - "8555:8554" # RTSP (Host port changed to 8555)
+      - "8190:8189/udp" # WebRTC ICE (Host port changed to 8190)
     volumes:
       - ./deepstream/mediamtx.yml:/mediamtx.yml
     restart: unless-stopped
@@ -20,7 +20,6 @@ services:
   deepstream:
     image: nvcr.io/nvidia/deepstream:9.0-triton-multiarch
     container_name: headcount_deepstream
-    runtime: nvidia
     ipc: host
     privileged: true
     depends_on:
@@ -34,7 +33,7 @@ services:
       - DISPLAY=
     volumes:
       - .:/workspace
-      - ./recordings:/workspace/recordings
+      - ./recordings:/workspace/recordings3
     command: bash /workspace/deepstream/start_ds.sh
     working_dir: /workspace/deepstream
     deploy:
@@ -43,25 +42,26 @@ services:
           devices:
             - driver: nvidia
               count: all
-              capabilities: [ gpu, compute, video, utility ]
-
+              capabilities: [gpu]
     restart: unless-stopped
 
   amc-backend:
     image: nvcr.io/nvidia/auto-magic-calib:2.0.0
     container_name: headcount_amc_backend
     privileged: true
+    ports:
+      - "8001:8000"
     environment:
       - HOST_IP=127.0.0.1
       - NVIDIA_DRIVER_CAPABILITIES=all
       - NVIDIA_VISIBLE_DEVICES=all
       - PYTHONPATH=/home/auto-calibration-ms/server
     volumes:
-      - ./recordings:/recordings
+      - ./recordings3:/recordings3
       - ./auto-magic-calib/GeoCalib:/home/auto-calibration-ms/submodules/GeoCalib
       - ./auto-magic-calib/GeoCalib/siclib:/home/auto-calibration-ms/submodules/GeoCalib/siclib
       - ./auto-magic-calib/projects:/home/auto-calibration-ms/server/projects
-      - ./models:/home/auto-calibration-ms/server/models
+      - ./auto-magic-calib/models:/home/auto-calibration-ms/server/models
       - ./auto-magic-calib/compose/ms/preprocess_config.yaml:/home/auto-calibration-ms/configs/config_AutoMagicCalib/preprocess_config.yaml:ro
       - ./auto-magic-calib/compose/ms/mv_amc_config.yaml:/home/auto-calibration-ms/configs/config_AutoMagicCalib/mv_amc_config.yaml:ro
       - ./auto-magic-calib/compose/ms/convert_det2kitti.sh:/home/auto-calibration-ms/service_scripts/convert_det2kitti.sh:ro
@@ -72,7 +72,7 @@ services:
           devices:
             - driver: nvidia
               count: all
-              capabilities: [ gpu, compute, video, utility ]
+              capabilities: [gpu]
     restart: unless-stopped
 
   amc-ui:
@@ -81,16 +81,8 @@ services:
     ports:
       - "5001:80"
     environment:
-      - API_URL=http://headcount_amc_proxy:8000
-      - VITE_API_URL=http://headcount_amc_proxy:8000
-      - REACT_APP_API_URL=http://headcount_amc_proxy:8000
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [ gpu, compute, video, utility ]
+      - API_URL=http://localhost:8001/v1
+      - VITE_API_URL=http://localhost:8001/v1
     depends_on:
       - amc-backend
     restart: unless-stopped
@@ -99,6 +91,7 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
+      network: host
     container_name: headcount_backend
     depends_on:
       - redis
@@ -108,7 +101,8 @@ services:
       - DS_API_BASE=deepstream:8010
       - FLASK_ENV=production
     ports:
-      - "5002:5000"
+      - "8000:5000"  # Backend API mapped to 8000
+      - "5002:5000"  # Frontend UI mapped to 5002
     volumes:
       - .:/app
       - ./data:/app/data

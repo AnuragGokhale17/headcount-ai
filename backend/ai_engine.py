@@ -20,7 +20,7 @@ class AIAnalyticsEngine:
     """Intelligent analytics engine that derives insights from raw tracking data."""
 
     def __init__(self, memory=None):
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
         self.memory = memory
         self.camera_manager = None  # Set after CameraManager is created in app.py
 

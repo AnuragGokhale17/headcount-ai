@@ -1,0 +1,3 @@
+import inspect
+from core.camera_estimation.layout_alignment_post_process import generate_transform_from_alignment_data
+print("Signature:", inspect.signature(generate_transform_from_alignment_data))

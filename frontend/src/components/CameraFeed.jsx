@@ -1,20 +1,27 @@
 import React from 'react';
+import { cameraFeedUrl, VIDEO_FEED_URL } from '../api';
 import './CameraFeed.css';
 
 function CameraFeed({ cameraId, className, alt, index = 0, total = 1, isDemoMode = false, onDemoCount }) {
     const host = window.location.hostname || "127.0.0.1";
-    const webrtcUrl = `http://${host}:8889/stream/?autoplay=true&muted=true`;
+    // WebRTC remains as an alternative but we prioritize the stable MJPEG feed
+    const webrtcUrl = `http://${host}:8889/stream?autoplay=true&muted=true`;
     
     // Prefer local demo video if user places it in public/test.mp4, otherwise fallback to public sample
     const demoVideoUrl = "/test.mp4";
     const fallbackVideoUrl = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4";
 
     const [isLoading, setIsLoading] = React.useState(true);
+    const [feedUrl, setFeedUrl] = React.useState('');
 
     React.useEffect(() => {
         setIsLoading(true);
-        const timer = setTimeout(() => setIsLoading(false), 1500);
-        return () => clearTimeout(timer);
+        
+        // Construct the stable feed URL. 
+        // If cameraId is valid, use the specific camera feed.
+        // Otherwise, fall back to the global stable video feed.
+        const url = cameraId ? cameraFeedUrl(cameraId) : VIDEO_FEED_URL;
+        setFeedUrl(url);
     }, [cameraId, total, isDemoMode]);
 
     let cols = 1, rows = 1;
@@ -95,6 +102,7 @@ function CameraFeed({ cameraId, className, alt, index = 0, total = 1, isDemoMode
                             muted
                             loop
                             playsInline
+                            onLoadedData={() => setIsLoading(false)}
                             style={{
                                 width: '100%',
                                 height: '100%',
@@ -159,23 +167,32 @@ function CameraFeed({ cameraId, className, alt, index = 0, total = 1, isDemoMode
                         ))}
                     </>
                 ) : (
-                    <iframe
+                    <img
                         key={`${cameraId}-${total}-${index}`}
-                        title={`AI Feed - ${alt || cameraId}`}
-                        src={webrtcUrl}
-                        frameBorder="0"
-                        scrolling="no"
-                        allow="autoplay; fullscreen"
+                        alt={`AI Feed - ${alt || cameraId}`}
+                        src={feedUrl}
+                        onLoad={() => setIsLoading(false)}
                         style={{ 
                             position: 'absolute',
-                            width: `${effectiveCols * 100}%`, 
-                            height: `${effectiveRows * 100}%`,
-                            left: `-${colIndex * 100}%`,
-                            top: `-${rowIndex * 100}%`,
-                            border: 'none',
+                            width: '100%', 
+                            height: '100%',
+                            objectFit: 'contain',
+                            background: '#000',
                             opacity: isLoading ? 0 : 1,
                             transition: 'opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1)',
                             pointerEvents: 'none'
+                        }}
+                        onError={(e) => {
+                            console.warn(`Feed error for camera ${cameraId}, trying global fallback...`);
+                            // If specific feed fails, try the global aggregated feed
+                            if (e.target.src.includes('/api/cameras/')) {
+                                e.target.src = '/video_feed';
+                            } else {
+                                // Last resort: retry with timestamp
+                                setTimeout(() => {
+                                    e.target.src = `/video_feed?t=${Date.now()}`;
+                                }, 3000);
+                            }
                         }}
                     />
                 )}
