@@ -229,11 +229,25 @@ export async function importAmcCalibration(cameraId, file) {
     return res.json();
 }
 
-export async function updateAmcConfig(videoCount) {
+export async function importAmcJsonCalibration(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch(`${API_BASE}/api/amc/import_json_calibration`, {
+        method: 'POST',
+        body: formData
+    });
+    return res.json();
+}
+
+export async function updateAmcConfig(files) {
+    const formData = new FormData();
+    for (let i = 0; i < files.length; i++) {
+        formData.append('files', files[i]);
+    }
+
     const res = await fetch(`${API_BASE}/api/amc/config`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ video_count: videoCount })
+        body: formData
     });
     return res.json();
 }

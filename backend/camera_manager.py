@@ -105,6 +105,12 @@ class CameraProcessor:
         self.label_annotator = None
         self.latest_detections = None
         self.latest_labels = []
+        self.global_id_map = {} # local_id -> global_id mapping from Manager
+
+    def set_global_id_map(self, mapping):
+        """Update the local->global ID mapping from the manager."""
+        with self._lock:
+            self.global_id_map = mapping
 
     def get_encoded_frame(self):
         """Return the latest JPEG bytes for snapshots."""
@@ -170,20 +176,24 @@ class CameraProcessor:
             }
 
     def get_current_detections(self):
-        """Returns detections for spatial merging: list of {'x': x, 'y': y, 'id': tid}"""
+        """Returns detections for spatial merging scaled to 720p (AMC standard)."""
         with self._cap_lock:
             if self.latest_detections is None or self.latest_detections.xyxy is None:
                 return []
-            
+
+            # Determine scaling factor (assuming input is 1920x1080)
+            # We want to map it to 1280x720 for the homography matrix
+            scale_x = 1280.0 / 1920.0
+            scale_y = 720.0 / 1080.0
+
             dets = []
             for i, box in enumerate(self.latest_detections.xyxy):
                 tid = int(self.latest_detections.tracker_id[i]) if self.latest_detections.tracker_id is not None else 0
-                # Use bottom-center (feet) for homography
-                x_c = (box[0] + box[2]) / 2
-                y_c = box[3]
+                # Use bottom-center (feet) and scale
+                x_c = ((box[0] + box[2]) / 2) * scale_x
+                y_c = box[3] * scale_y
                 dets.append({'camera_id': self.camera_id, 'x': x_c, 'y': y_c, 'id': tid})
             return dets
-
     def _process_loop(self):
         """
         Optimized Logic Engine: Listens to DeepStream via Redis.
@@ -387,6 +397,18 @@ class CameraProcessor:
             # Snapshot for UI (using the detections we just received)
             with self._cap_lock:
                 self.latest_detections = detections
+                
+                # Update Labels with Global ID if mapped
+                self.latest_labels = []
+                if detections.tracker_id is not None:
+                    with self._lock:
+                        for tid in detections.tracker_id:
+                            tid_int = int(tid)
+                            global_id = self.global_id_map.get(tid_int)
+                            if global_id:
+                                self.latest_labels.append(f"P{global_id} (G)")
+                            else:
+                                self.latest_labels.append(f"p{tid_int}")
 
             # Periodically persist to SQLite
             if self.memory and (curr_time - last_persist_time) > 30:
@@ -404,7 +426,7 @@ class CameraManager:
         self.memory = memory
         self.ai_engine = ai_engine
         self._processors = {}  # camera_id -> CameraProcessor
-        self.merger = SpatialMerger()
+        self.merger = SpatialMerger(proximity_threshold=250.0) # Increased from 100 for better matching
         self._lock = threading.Lock()
 
         # Redis connection for reading DeepStream-published frames
@@ -563,27 +585,45 @@ class CameraManager:
         active_count = 0
         
         with self._lock:
+            # Gather raw detections from all processors
+            all_dets = []
             for proc in self._processors.values():
                 stats = proc.get_stats()
                 total_in += stats.get("in", 0)
                 total_out += stats.get("out", 0)
-                total_occupancy += stats.get("people_count", 0)
                 if stats.get("is_connected"):
                     avg_fps += stats.get("fps", 0)
                     active_count += 1
-                    
+                
+                # Fetch detections with local IDs for spatial mapping
+                for d in proc.get_current_detections():
+                    all_dets.append({
+                        'camera_id': d['camera_id'],
+                        'local_id': d['id'],
+                        'x': d['x'],
+                        'y': d['y']
+                    })
+
+        # --- NEW SPATIAL DEDUPLICATION & GLOBAL ID MAPPING ---
+        if self.merger.cameras_homography:
+            bev_results, local_to_global_map = self.merger.cluster_and_match(all_dets)
+            total_occupancy = len(bev_results)
+            
+            # Distribute relevant mappings back to each processor
+            with self._lock:
+                for cam_id, proc in self._processors.items():
+                    # Filter map for this specific camera
+                    cam_map = {local_id: gid for (cid, local_id), gid in local_to_global_map.items() if cid == cam_id}
+                    proc.set_global_id_map(cam_map)
+        else:
+            # Fallback if no calibration: simple sum of occupancy
+            with self._lock:
+                for proc in self._processors.values():
+                    total_occupancy += proc.stats.get("occupancy", 0)
+
         if active_count > 0:
             avg_fps = int(avg_fps / active_count)
             
-        # --- NEW SPATIAL DEDUPLICATION ---
-        all_dets = self.get_all_detections()
-        
-        # If no homography matrices are set, fallback to simple sum
-        if not self.merger.cameras_homography:
-            total_occupancy = total_occupancy
-        else:
-            total_occupancy = self.merger.get_unique_count(all_dets)
-
         return {
             "in": total_in,
             "out": total_out,
@@ -605,7 +645,11 @@ class CameraManager:
     def get_spatial_data(self):
         """Returns the deduplicated global coordinates for all people."""
         all_dets = self.get_all_detections()
-        return self.merger.deduplicate(all_dets)
+        if not self.merger.cameras_homography:
+            return []
+        
+        bev_results, _ = self.merger.cluster_and_match(all_dets)
+        return bev_results
 
     def get_area_stats(self):
         area_counts = defaultdict(lambda: {"people_count": 0, "cameras": 0, "connected": 0})
@@ -665,32 +709,50 @@ class CameraManager:
             return None
 
     def get_camera_frame(self, camera_id):
-        """Read the latest annotated JPEG frame with triple-redundancy."""
+        """Read the latest annotated JPEG frame with Global ID overlays."""
         r = self._get_redis_client()
-        
-        # --- 1. TRY REDIS (DeepStream Output) ---
+        proc = self.get_processor(camera_id)
+
+        # 1. Get raw frame from Redis (DeepStream Output)
+        frame_data = None
         if r:
             try:
                 frame_data = r.get(f"ds_frame:{camera_id}")
-                if frame_data:
-                    return frame_data
-                
-                # Fuzzy match for index shifts
-                keys = r.keys("ds_frame:*")
-                if keys:
-                    return r.get(keys[0])
-            except Exception:
-                pass
+                if not frame_data:
+                    keys = r.keys("ds_frame:*")
+                    if keys: frame_data = r.get(keys[0])
+            except: pass
 
-        # --- 2. TRY INTERNAL PROCESSOR BUFFER (Live Frame) ---
-        # This is the fastest fallback and highly reliable
-        proc = self.get_processor(camera_id) # Uses short lock internally
-        
-        if proc:
-            with proc.frame_lock:
-                if proc._encoded_frame:
-                    return proc._encoded_frame
+        if not frame_data:
+            return None
 
+        # 2. If we have Global ID mappings, overlay them using OpenCV
+        if proc and proc.global_id_map and proc.latest_detections is not None:
+            try:
+                # Decode JPEG
+                nparr = np.frombuffer(frame_data, np.uint8)
+                img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+                if img is not None:
+                    # Draw Global IDs
+                    for i, box in enumerate(proc.latest_detections.xyxy):
+                        tid = int(proc.latest_detections.tracker_id[i])
+                        gid = proc.global_id_map.get(tid)
+                        if gid:
+                            # Draw a dark background for the text
+                            text = f"GLOBAL ID: {gid}"
+                            x1, y1 = int(box[0]), int(box[1])
+                            cv2.rectangle(img, (x1, y1 - 25), (x1 + 150, y1), (0, 0, 0), -1)
+                            cv2.putText(img, text, (x1 + 5, y1 - 7), 
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+
+                    # Re-encode to JPEG
+                    _, buffer = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                    return buffer.tobytes()
+            except Exception as e:
+                print(f"Drawing error: {e}")
+
+        return frame_data
         # --- 3. TRY DIRECT RTSP (OpenCV) ---
         if proc and proc.url:
             now = time.time()

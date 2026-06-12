@@ -37,6 +37,11 @@ RUN pip install --no-cache-dir --force-reinstall --no-deps \
     --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org \
     opencv-python-headless
 
+RUN pip install --no-cache-dir numpy<2.0 \
+    --trusted-host pypi.org \
+    --trusted-host files.pythonhosted.org
+
+
 # Copy all source code
 COPY . .
 

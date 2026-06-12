@@ -429,32 +429,103 @@ def building_total():
 # AMC DYNAMIC CONFIGURATION
 # =========================================================================
 
+@cameras_bp.route("/api/amc/import_json_calibration", methods=["POST"])
+def import_json_calibration():
+    """Import homography matrices for multiple cameras from an AMC JSON file."""
+    import json
+    if "file" not in request.files:
+        return jsonify({"error": "No file uploaded"}), 400
+
+    file = request.files["file"]
+    if file.filename == "":
+        return jsonify({"error": "No file selected"}), 400
+
+    try:
+        content = json.load(file)
+    except Exception as e:
+        return jsonify({"error": f"Failed to parse JSON: {str(e)}"}), 400
+
+    if "sensors" not in content or not isinstance(content["sensors"], list):
+        return jsonify({"error": "JSON must contain 'sensors' array"}), 400
+
+    active_cameras = _memory.get_cameras(active_only=True)
+    # Sort by ID or creation to ensure consistent indexing
+    active_cameras.sort(key=lambda x: x['id'])
+    
+    updated_count = 0
+    results = []
+
+    for i, sensor in enumerate(content["sensors"]):
+        sensor_id = sensor.get("id")
+        matrix = sensor.get("homography")
+
+        if not sensor_id or not matrix:
+            continue
+
+        # Try to find a matching camera
+        matched_cam = None
+        
+        # 1. Try Filename Match (e.g., "cam2" in "cam2_...mp4" matches "cam2" in URL)
+        for cam in active_cameras:
+            # Check if sensor_id is in URL or vice-versa
+            if sensor_id in cam["url"] or (cam["url"] and any(part in cam["url"] for part in sensor_id.split('_'))):
+                matched_cam = cam
+                break
+        
+        # 2. Fallback to Index Match (Sensor #i matches Camera #i)
+        if not matched_cam and i < len(active_cameras):
+            matched_cam = active_cameras[i]
+            # results.append({"sensor_id": sensor_id, "info": f"Matched by index {i}"})
+        
+        if matched_cam:
+            try:
+                success = _memory.update_camera_homography(matched_cam["id"], matrix)
+                if success:
+                    _camera_manager.merger.update_camera_homography(matched_cam["id"], matrix)
+                    updated_count += 1
+                    results.append({"sensor_id": sensor_id, "camera_id": matched_cam["id"], "status": "updated", "match_method": "filename" if sensor_id in (matched_cam["url"] or "") else "index"})
+                else:
+                    results.append({"sensor_id": sensor_id, "camera_id": matched_cam["id"], "status": "failed_db_update"})
+            except Exception as e:
+                results.append({"sensor_id": sensor_id, "camera_id": matched_cam["id"], "status": f"error: {str(e)}"})
+        else:
+            results.append({"sensor_id": sensor_id, "status": "no_matching_camera"})
+
+    return jsonify({
+        "success": True,
+        "updated_count": updated_count,
+        "details": results
+    })
+
+
 @cameras_bp.route("/api/amc/config", methods=["POST"])
 def update_amc_config():
-    """Update mv_amc_config.yaml with dynamic cam_dir list."""
+    """Upload videos, update mv_amc_config.yaml, and refresh camera DB."""
     import yaml
     import os
 
-    data = request.get_json()
-    if not data or "video_count" not in data:
-        return jsonify({"error": "Missing 'video_count' in request body"}), 400
+    files = request.files.getlist('files')
+    if not files or len(files) == 0:
+        return jsonify({"error": "No files uploaded"}), 400
 
-    try:
-        count = int(data["video_count"])
-    except ValueError:
-        return jsonify({"error": "video_count must be an integer"}), 400
-
-    if count < 1:
-        return jsonify({"error": "At least 1 video is required"}), 400
-
+    count = len(files)
     cam_dirs = [f"cam_{i:02d}" for i in range(count)]
 
-    # Path to mv_amc_config.yaml
-    # __file__ is in backend/routes/cameras.py
-    # We need to go up three levels to reach the project root (/app in Docker)
+    # Paths
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     yaml_path = os.path.join(base_dir, "auto-magic-calib", "compose", "ms", "mv_amc_config.yaml")
+    recordings_dir = os.path.join(base_dir, "recordings3")
 
+    os.makedirs(recordings_dir, exist_ok=True)
+
+    # 1. Save uploaded files to disk sequentially
+    for i, file in enumerate(files):
+        # Enforce .mp4 extension so Deepstream handles it consistently
+        filename = f"cam_{i:02d}.mp4"
+        file_path = os.path.join(recordings_dir, filename)
+        file.save(file_path)
+
+    # 2. Update mv_amc_config.yaml
     try:
         with open(yaml_path, 'r') as f:
             config = yaml.safe_load(f)
@@ -466,8 +537,30 @@ def update_amc_config():
 
         with open(yaml_path, 'w') as f:
             yaml.dump(config, f, default_flow_style=False, sort_keys=False)
-
-        return jsonify({"success": True, "cam_dir": cam_dirs})
     except Exception as e:
         return jsonify({"error": f"Failed to update AMC config: {str(e)}"}), 500
+
+    # 3. Synchronize with Headcount Database
+    try:
+        # Delete existing cameras to ensure a clean slate based on the uploaded files
+        existing_cams = _memory.get_cameras(active_only=False)
+        for cam in existing_cams:
+            _camera_manager.stop_camera(cam["id"])
+            _memory.delete_camera(cam["id"])
+
+        # Insert the newly uploaded videos as cameras
+        added_cams = []
+        for i in range(count):
+            name = f"Camera {i+1}"
+            url = f"file:///workspace/recordings3/cam_{i:02d}.mp4"
+            area = "Default Area"
+            plant = "Plant 1"
+
+            cam_id = _memory.add_camera(name, url, area, plant)
+            _camera_manager.start_camera(cam_id, name, url, area, plant)
+            added_cams.append({"id": cam_id, "name": name, "url": url})
+
+        return jsonify({"success": True, "cam_dir": cam_dirs, "cameras": added_cams})
+    except Exception as e:
+        return jsonify({"error": f"Database sync failed: {str(e)}"}), 500
 

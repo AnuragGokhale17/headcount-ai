@@ -10,8 +10,8 @@ services:
     image: bluenviron/mediamtx:latest
     container_name: headcount_mediamtx
     ports:
-      - "8890:8889" # WebRTC (Host port changed to 8890)
-      - "8555:8554" # RTSP (Host port changed to 8555)
+      - "8889:8889" # WebRTC
+      - "8554:8554" # RTSP
       - "8190:8189/udp" # WebRTC ICE (Host port changed to 8190)
     volumes:
       - ./deepstream/mediamtx.yml:/mediamtx.yml
@@ -33,7 +33,7 @@ services:
       - DISPLAY=
     volumes:
       - .:/workspace
-      - ./recordings:/workspace/recordings3
+      - ./recordings3:/workspace/recordings3
     command: bash /workspace/deepstream/start_ds.sh
     working_dir: /workspace/deepstream
     deploy:
